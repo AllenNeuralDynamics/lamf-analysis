@@ -14,7 +14,6 @@ class GrabOphysOutputs(object):
 
         assert expt_folder_path or oeid is not None, "Must provide either expt_folder_path or oeid"
 
-
         if data_path:
             self.data_path = Path(data_path)
         else:
