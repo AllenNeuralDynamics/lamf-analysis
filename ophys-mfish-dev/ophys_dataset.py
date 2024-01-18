@@ -6,6 +6,7 @@ import json
 import os
 import h5py
 import numpy as np
+import xarray as xr
 
 
 class LazyLoadable(object):
@@ -36,20 +37,22 @@ class LazyLoadable(object):
 class OphysDataset(GrabOphysOutputs):
     def __init__(self, 
                  expt_folder_path: Optional[str] = None,
+                 raw_folder_path: Optional[str] = None,
                  oeid: Optional[str] = None,
                  data_path: Optional[str] = None):
         super().__init__(expt_folder_path=expt_folder_path,
+                         raw_folder_path=raw_folder_path,
                          oeid=oeid,
                          data_path=data_path)
 
     ####################################################################
     # Data files
     ####################################################################
-        
+
     def _add_csid_to_table(self, table):
         """Cell specimen ids are not avaiable in CodeOcean, as they were in LIMS (01/18/2024)
         Use this method to add them.
-        
+
         Option 1: duplicated cell_roi_id
         Currently, cell_roi_ids are just indexes. Eventually they will be given numbers as well.
         """
@@ -58,29 +61,28 @@ class OphysDataset(GrabOphysOutputs):
         # check table index name
         if table.index.name == 'cell_roi_id':
             table['cell_specimen_id'] = table.index.values
-        elif table.columns.contains('cell_roi_id'):
+        elif 'cell_roi_id' in table.columns:
             table['cell_specimen_id'] = table.cell_roi_id
         else:
             raise Exception('Table does not contain cell_roi_id')
         table = table.set_index('cell_specimen_id')
 
         return table
+    
+
 
     def get_average_projection_png(self):
         self._average_projection = plt.imread(self.file_paths['average_projection_png'])
         return self._average_projection
-    average_projection = LazyLoadable('_average_projection', get_average_projection_png)
-
+    
     def get_max_projection_png(self):
         self._max_projection = plt.imread(self.file_paths['max_projection_png'])
         return self._max_projection
-    max_projection = LazyLoadable('_max_projection', get_max_projection_png)
 
     def get_motion_transform_csv(self):
         self._motion_transform = pd.read_csv()
         return self._motion_transform
-    motion_transform = LazyLoadable('_motion_transform', get_motion_transform_csv)
-
+    
     # TODO: should we rename the attribute to segmentation?
     def get_cell_specimen_table(self): 
         with open(self.file_paths['segmentation_output_json']) as json_file:
@@ -91,8 +93,7 @@ class OphysDataset(GrabOphysOutputs):
         cell_specimen_table = self._add_csid_to_table(cell_specimen_table)
         self._cell_specimen_table = cell_specimen_table
         return self._cell_specimen_table
-    cell_specimen_table = LazyLoadable('_cell_specimen_table', get_cell_specimen_table)
-
+    
     def get_raw_fluorescence_traces(self):
 
         with h5py.File(self.file_paths['roi_traces_h5'], 'r') as f:
@@ -106,7 +107,6 @@ class OphysDataset(GrabOphysOutputs):
         traces_df = self._add_csid_to_table(traces_df)
         self._raw_fluorescence_traces = traces_df
         return self._raw_fluorescence_traces
-    raw_fluorescence_traces = LazyLoadable('_raw_fluorescence_traces', get_raw_fluorescence_traces)
 
     def get_neuropil_traces(self):
         # TODO: cell_roi_ids are removed from this table. Should we add them back?
@@ -128,7 +128,120 @@ class OphysDataset(GrabOphysOutputs):
         neuropil_traces = self._add_csid_to_table(neuropil_traces)
         self._neuropil_traces = neuropil_traces
         return self._neuropil_traces
-    neuropil_traces = LazyLoadable('_neuropil_traces', get_neuropil_traces) 
+    
+
+    def get_neuropil_masks(self):
+
+        with open(self.file_paths['neuropil_masks_json']) as json_file:
+            neuropil_mask_data = json.load(json_file)
+
+        neuropil_masks = pd.DataFrame(neuropil_mask_data['neuropils'])
+        neuropil_masks = neuropil_masks.rename(columns={'id':'cell_roi_id'})
+        neuropil_masks = self._add_csid_to_table(neuropil_masks)
+        self._neuropil_masks = neuropil_masks
+        return self._neuropil_masks
+    
+
+    def get_neuropil_traces_xr(self):
+        """
+
+        Why xarray?
+        Labeled indexing, select data by cell_rois_id directly
+        Can be more efficient and intuitive than pandas, which uses boolean indexing
+
+        multidimensional labeled: xarray
+        tabular with groupby: pandas
+
+        Example:
+        if x is xarray, 
+
+        cell_roi_id = 1
+        x.sel(cell_roi_id=cell_roi_id).neuropil_fluorescence_traces.plot.line()
+        x.sel(cell_roi_id=cell_roi_id).RMSE
+        
+        """
+
+        f = h5py.File(self.file_paths['neuropil_correction_h5'], mode='r')
+        neuropil_traces_array = np.asarray(f['FC'])
+        roi_ids = [int(roi_id) for roi_id in np.asarray(f['roi_names'])]
+        RMSE = [value for value in np.asarray(f['RMSE'])]
+        r = [value for value in np.asarray(f['r'])]
+        f.close()
+
+        neuropil_traces = xr.DataArray(neuropil_traces_array, dims=('cell_roi_id', 'time'), coords={'cell_roi_id': roi_ids, 'time': np.arange(neuropil_traces_array.shape[1])})
+        r = xr.DataArray(r, dims=('cell_roi_id',), coords={'cell_roi_id': roi_ids})
+        RMSE = xr.DataArray(RMSE, dims=('cell_roi_id',), coords={'cell_roi_id': roi_ids})
+        self._neuropil_traces_xr = xr.Dataset({'neuropil_fluorescence_traces': neuropil_traces, 'r': r, 'RMSE': RMSE})
+
+        return self._neuropil_traces_xr
+    
+
+    def get_demixed_traces(self):
+
+        f = h5py.File(self.file_paths['demixing_output_h5'], mode='r')
+        demixing_output_array = np.asarray(f['data'])
+        roi_ids = [int(roi_id) for roi_id in np.asarray(f['roi_names'])]
+
+        # convert to dataframe 
+        demixed_traces = pd.DataFrame(index=roi_ids, columns=['demixed_fluorescence_traces'])
+        for i, roi_id in enumerate(roi_ids):
+            demixed_traces.loc[roi_id, 'demixed_fluorescence_traces'] = demixing_output_array[i, :]
+        demixed_traces.index.name = 'cell_roi_id'
+        demixed_traces = self._add_csid_to_table(demixed_traces)
+        self._demixed_traces = demixed_traces
+        return self._demixed_traces
+    
+
+    def get_dff_traces(self):
+
+        f = h5py.File(self.file_paths['dff_h5'], mode='r')
+        dff_traces_array = np.asarray(f['data'])
+        roi_ids = [int(roi_id) for roi_id in np.asarray(f['roi_names'])]
+        num_small_baseline_frames = [value for value in np.asarray(f['num_small_baseline_frames'])]
+        sigma_dff = [value for value in np.asarray(f['sigma_dff'])]
+
+        # convert to dataframe 
+        dff_traces = pd.DataFrame(index=roi_ids, columns=['dff', 'sigma_dff', 'num_small_baseline_frames'])
+        for i, roi_id in enumerate(roi_ids):
+            dff_traces.loc[roi_id, 'dff'] = dff_traces_array[i, :]
+            dff_traces.loc[roi_id, 'num_small_baseline_frames'] = num_small_baseline_frames[i]
+            dff_traces.loc[roi_id, 'sigma_dff'] = sigma_dff[i]
+        dff_traces.index.name = 'cell_roi_id'
+        dff_traces = self._add_csid_to_table(dff_traces)
+        self._dff_traces = dff_traces
+        return self._dff_traces
+    dff_traces = LazyLoadable('_dff_traces', get_dff_traces)
+
+    def get_events(self):
+
+        f = h5py.File(self.file_paths["events_oasis_h5"], mode='r')
+        events_array = np.asarray(f['events'])
+        roi_ids = [int(roi_id) for roi_id in np.asarray(f['cell_roi_id'])]
+
+        # convert to dataframe 
+        events = pd.DataFrame(index=roi_ids, columns=['events'])
+        for i, roi_id in enumerate(roi_ids):
+            events.loc[roi_id, 'events'] = events_array[i, :]
+        events['filtered_events'] = events['events']
+        events.index.name = 'cell_roi_id'
+        events = self._add_csid_to_table(events)
+        self._events = events
+        return self._events
+
+    # These data products should be available in processed data assets
+    average_projection = LazyLoadable('_average_projection', get_average_projection_png)
+    max_projection = LazyLoadable('_max_projection', get_max_projection_png)
+    motion_transform = LazyLoadable('_motion_transform', get_motion_transform_csv)
+    cell_specimen_table = LazyLoadable('_cell_specimen_table', get_cell_specimen_table)
+    raw_fluorescence_traces = LazyLoadable('_raw_fluorescence_traces', get_raw_fluorescence_traces)
+    neuropil_traces = LazyLoadable('_neuropil_traces', get_neuropil_traces)
+    neuropil_masks = LazyLoadable('_neuropil_masks', get_neuropil_masks)
+    neuropil_traces_xr = LazyLoadable('_neuropil_traces_xr', get_neuropil_traces_xr)
+    demixed_traces = LazyLoadable('_demixed_traces', get_demixed_traces)
+    events = LazyLoadable('_events', get_events)
+
+    
+
 
     @classmethod
     def construct_and_load(cls, experiment_id, cache_dir=None, **kwargs):

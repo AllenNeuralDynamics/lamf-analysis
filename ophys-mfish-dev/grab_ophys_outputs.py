@@ -10,6 +10,7 @@ from typing import Any, Optional
 class GrabOphysOutputs(object):
     def __init__(self, 
                  expt_folder_path: Optional[str] = None,
+                 raw_folder_path: Optional[str] = None,
                  oeid: Optional[str] = None,
                  data_path: Optional[str] = None):
 
@@ -27,7 +28,7 @@ class GrabOphysOutputs(object):
             self.expt_folder_path = Path(expt_folder_path)
             self.oeid = self.expt_folder_path.stem
 
-        # filepaths dict
+        # processed filepaths dict
         self.file_parts = {"platform_json": "_platform.json",
                            "processing_json": "processing.json",
                            "params_json": "_params.json",
@@ -48,6 +49,9 @@ class GrabOphysOutputs(object):
                            "events_oasis_h5": "events_oasis.h5"}
         self.file_paths = {}
         self._get_file_path_dict()
+
+        # raw
+        # for local, to create a full dataset, must speficity the raw_folder_path
 
     def _find_expt_folder_from_oeid(self, oeid):
         # find in results
