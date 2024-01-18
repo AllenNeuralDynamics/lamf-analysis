@@ -14,7 +14,7 @@ from pathlib import Path
 import skimage.registration
 import skimage.exposure
 
-from ..grab_ophys_data import GrabOphysOutputs as GOO
+from ..grab_ophys_outputs import GrabOphysOutputs as GOO
 
 if os.name == 'nt':
     global_base_dir = Path(
