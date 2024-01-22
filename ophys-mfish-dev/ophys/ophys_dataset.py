@@ -1,4 +1,6 @@
-from grab_ophys_outputs import GrabOphysOutputs
+from ophys.grab_ophys_outputs import GrabOphysOutputs
+from ophys.sync_utilties import get_synchronized_frame_times
+
 from typing import Any, Optional
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -7,6 +9,25 @@ import os
 import h5py
 import numpy as np
 import xarray as xr
+
+OPHYS_KEYS = ('2p_vsync', 'vsync_2p')
+
+STIMULUS_KEYS = ('frames', 'stim_vsync', 'vsync_stim')
+PHOTODIODE_KEYS = ('photodiode', 'stim_photodiode')
+EYE_TRACKING_KEYS = ("eye_frame_received",  # Expected eye tracking
+                                            # line label after 3/27/2020
+                        # clocks eye tracking frame pulses (port 0, line 9)
+                        "cam2_exposure",
+                        # previous line label for eye tracking
+                        # (prior to ~ Oct. 2018)
+                        "eyetracking",
+                        "eye_cam_exposing",
+                        "eye_tracking")  # An undocumented, but possible eye tracking line label  # NOQA E114
+BEHAVIOR_TRACKING_KEYS = ("beh_frame_received",  # Expected behavior line label after 3/27/2020  # NOQA E127
+                                                 # clocks behavior tracking frame # NOQA E127
+                                                 # pulses (port 0, line 8)
+                            "cam1_exposure",
+                            "behavior_monitoring")
 
 
 class LazyLoadable(object):
@@ -68,13 +89,11 @@ class OphysDataset(GrabOphysOutputs):
         table = table.set_index('cell_specimen_id')
 
         return table
-    
-
 
     def get_average_projection_png(self):
         self._average_projection = plt.imread(self.file_paths['average_projection_png'])
         return self._average_projection
-    
+
     def get_max_projection_png(self):
         self._max_projection = plt.imread(self.file_paths['max_projection_png'])
         return self._max_projection
@@ -82,7 +101,7 @@ class OphysDataset(GrabOphysOutputs):
     def get_motion_transform_csv(self):
         self._motion_transform = pd.read_csv()
         return self._motion_transform
-    
+
     # TODO: should we rename the attribute to segmentation?
     def get_cell_specimen_table(self): 
         with open(self.file_paths['segmentation_output_json']) as json_file:
@@ -93,7 +112,7 @@ class OphysDataset(GrabOphysOutputs):
         cell_specimen_table = self._add_csid_to_table(cell_specimen_table)
         self._cell_specimen_table = cell_specimen_table
         return self._cell_specimen_table
-    
+
     def get_raw_fluorescence_traces(self):
 
         with h5py.File(self.file_paths['roi_traces_h5'], 'r') as f:
@@ -128,7 +147,6 @@ class OphysDataset(GrabOphysOutputs):
         neuropil_traces = self._add_csid_to_table(neuropil_traces)
         self._neuropil_traces = neuropil_traces
         return self._neuropil_traces
-    
 
     def get_neuropil_masks(self):
 
@@ -140,7 +158,6 @@ class OphysDataset(GrabOphysOutputs):
         neuropil_masks = self._add_csid_to_table(neuropil_masks)
         self._neuropil_masks = neuropil_masks
         return self._neuropil_masks
-    
 
     def get_neuropil_traces_xr(self):
         """
@@ -158,7 +175,7 @@ class OphysDataset(GrabOphysOutputs):
         cell_roi_id = 1
         x.sel(cell_roi_id=cell_roi_id).neuropil_fluorescence_traces.plot.line()
         x.sel(cell_roi_id=cell_roi_id).RMSE
-        
+
         """
 
         f = h5py.File(self.file_paths['neuropil_correction_h5'], mode='r')
@@ -174,7 +191,6 @@ class OphysDataset(GrabOphysOutputs):
         self._neuropil_traces_xr = xr.Dataset({'neuropil_fluorescence_traces': neuropil_traces, 'r': r, 'RMSE': RMSE})
 
         return self._neuropil_traces_xr
-    
 
     def get_demixed_traces(self):
 
@@ -190,7 +206,6 @@ class OphysDataset(GrabOphysOutputs):
         demixed_traces = self._add_csid_to_table(demixed_traces)
         self._demixed_traces = demixed_traces
         return self._demixed_traces
-    
 
     def get_dff_traces(self):
 
@@ -228,6 +243,15 @@ class OphysDataset(GrabOphysOutputs):
         self._events = events
         return self._events
 
+    def get_ophys_timestamps(self):
+        ophys_timestamps = sync_utilities.get_synchronized_frame_times(session_sync_file=self.sync_file_path,
+                                    sync_line_label_keys= OPHYS_KEYS,
+                                    drop_frames= None,
+                                    trim_after_spike= True)
+        # hack - need to get info on image_plane_count and image_plane_group from metadta
+        self._ophys_timestamps = ophys_timestamps[::4]                       
+        return self._ophys_timestamps
+
     # These data products should be available in processed data assets
     average_projection = LazyLoadable('_average_projection', get_average_projection_png)
     max_projection = LazyLoadable('_max_projection', get_max_projection_png)
@@ -240,7 +264,9 @@ class OphysDataset(GrabOphysOutputs):
     demixed_traces = LazyLoadable('_demixed_traces', get_demixed_traces)
     events = LazyLoadable('_events', get_events)
 
-    
+    ophys_timestamps = LazyLoadable('_ophys_timestamps', get_ophys_timestamps) 
+
+
 
 
     @classmethod
