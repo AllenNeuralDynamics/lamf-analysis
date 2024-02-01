@@ -1,0 +1,12 @@
+h5py
+imageio
+matplotlib
+numpy
+opencv_python_headless
+pandas
+Pillow
+pystackreg
+scikit_image
+scipy
+tifffile
+xarray
