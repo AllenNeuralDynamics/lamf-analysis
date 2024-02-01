@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 import glob
 from typing import Any, Optional
+import json
 
 
 class GrabOphysOutputs(object):
@@ -50,6 +51,12 @@ class GrabOphysOutputs(object):
         self.file_paths = {}
         self._get_file_path_dict()
 
+        # if raw, get sync file
+        if raw_folder_path:
+            print("Currently sync file stored in raw data assest, will load since raw_folder_path is provided (02/01/2024)")
+            self.raw_folder_path = Path(raw_folder_path)
+            self.sync_file = self._get_sync_file()
+
         # raw
         # for local, to create a full dataset, must speficity the raw_folder_path
 
@@ -66,6 +73,19 @@ class GrabOphysOutputs(object):
         except IndexError:
             file = None
         return file
+    
+    def _get_sync_file(self):
+        # load platform json
+        with open(self.file_paths['platform_json'], 'r') as f:
+            platform_json = json.load(f)
+
+        sync_file_path = self.raw_folder_path / "pophys" / platform_json['sync_file']
+        # stimulus pkl: "stimulus_pkl"
+        # load sync h5
+        #with open(sync_file_path, 'r') as f:
+        #    sync_file = json.load(f)
+        # add to file paths dict
+        self.file_paths['sync_file'] = sync_file_path
 
     ####################################################################
     # Data files

@@ -55,10 +55,10 @@ class LazyLoadable(object):
         return getattr(obj, self.name)
 
 
-class OphysDataset(GrabOphysOutputs):
+class OphysPlaneDataset(GrabOphysOutputs):
     def __init__(self, 
                  expt_folder_path: Optional[str] = None,
-                 raw_folder_path: Optional[str] = None,
+                 raw_folder_path: Optional[str] = None, # where sync file is (pkl file)
                  oeid: Optional[str] = None,
                  data_path: Optional[str] = None):
         super().__init__(expt_folder_path=expt_folder_path,
@@ -207,20 +207,43 @@ class OphysDataset(GrabOphysOutputs):
         self._demixed_traces = demixed_traces
         return self._demixed_traces
 
+    # OLD DFF H5; MJD 02/01/2024; may want to reimplement
+    # def get_dff_traces(self):
+
+    #     f = h5py.File(self.file_paths['dff_h5'], mode='r')
+    #     dff_traces_array = np.asarray(f['data'])
+    #     roi_ids = [int(roi_id) for roi_id in np.asarray(f['roi_names'])]
+    #     num_small_baseline_frames = [value for value in np.asarray(f['num_small_baseline_frames'])]
+    #     sigma_dff = [value for value in np.asarray(f['sigma_dff'])]
+
+    #     # convert to dataframe 
+    #     dff_traces = pd.DataFrame(index=roi_ids, columns=['dff', 'sigma_dff', 'num_small_baseline_frames'])
+    #     for i, roi_id in enumerate(roi_ids):
+    #         dff_traces.loc[roi_id, 'dff'] = dff_traces_array[i, :]
+    #         dff_traces.loc[roi_id, 'num_small_baseline_frames'] = num_small_baseline_frames[i]
+    #         dff_traces.loc[roi_id, 'sigma_dff'] = sigma_dff[i]
+    #     dff_traces.index.name = 'cell_roi_id'
+    #     dff_traces = self._add_csid_to_table(dff_traces)
+    #     self._dff_traces = dff_traces
+    #     return self._dff_traces
+    # dff_traces = LazyLoadable('_dff_traces', get_dff_traces)
+
     def get_dff_traces(self):
 
         f = h5py.File(self.file_paths['dff_h5'], mode='r')
         dff_traces_array = np.asarray(f['data'])
         roi_ids = [int(roi_id) for roi_id in np.asarray(f['roi_names'])]
-        num_small_baseline_frames = [value for value in np.asarray(f['num_small_baseline_frames'])]
-        sigma_dff = [value for value in np.asarray(f['sigma_dff'])]
+        baseline = [value for value in np.asarray(f['baseline'])]
+        noise = [value for value in np.asarray(f['noise'])]
+        skewness = [value for value in np.asarray(f['skewness'])]
 
         # convert to dataframe 
-        dff_traces = pd.DataFrame(index=roi_ids, columns=['dff', 'sigma_dff', 'num_small_baseline_frames'])
+        dff_traces = pd.DataFrame(index=roi_ids, columns=['dff', 'baseline', 'noise', 'skewness'])
         for i, roi_id in enumerate(roi_ids):
             dff_traces.loc[roi_id, 'dff'] = dff_traces_array[i, :]
-            dff_traces.loc[roi_id, 'num_small_baseline_frames'] = num_small_baseline_frames[i]
-            dff_traces.loc[roi_id, 'sigma_dff'] = sigma_dff[i]
+            dff_traces.loc[roi_id, 'baseline'] = baseline[i]
+            dff_traces.loc[roi_id, 'noise'] = noise[i]
+            dff_traces.loc[roi_id, 'skewness'] = skewness[i]
         dff_traces.index.name = 'cell_roi_id'
         dff_traces = self._add_csid_to_table(dff_traces)
         self._dff_traces = dff_traces
@@ -244,12 +267,14 @@ class OphysDataset(GrabOphysOutputs):
         return self._events
 
     def get_ophys_timestamps(self):
-        ophys_timestamps = sync_utilities.get_synchronized_frame_times(session_sync_file=self.sync_file_path,
-                                    sync_line_label_keys= OPHYS_KEYS,
-                                    drop_frames= None,
-                                    trim_after_spike= True)
+        sync_fp = self.file_paths['sync_file']
+        ophys_timestamps = get_synchronized_frame_times(session_sync_file=sync_fp,
+                                                        sync_line_label_keys=OPHYS_KEYS,
+                                                        drop_frames=None,
+                                                        trim_after_spike=True)
         # hack - need to get info on image_plane_count and image_plane_group from metadta
-        self._ophys_timestamps = ophys_timestamps[::4]                       
+        self._ophys_timestamps = ophys_timestamps#[::4] MG HACK?????
+        #self.all_ophys_timestamps = ophys_timestamps         
         return self._ophys_timestamps
 
     # These data products should be available in processed data assets
@@ -264,7 +289,8 @@ class OphysDataset(GrabOphysOutputs):
     demixed_traces = LazyLoadable('_demixed_traces', get_demixed_traces)
     events = LazyLoadable('_events', get_events)
 
-    ophys_timestamps = LazyLoadable('_ophys_timestamps', get_ophys_timestamps) 
+    # raw/input/sessions level data products
+    ophys_timestamps = LazyLoadable('_ophys_timestamps', get_ophys_timestamps)
 
 
 
