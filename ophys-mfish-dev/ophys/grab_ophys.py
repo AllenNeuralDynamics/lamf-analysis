@@ -8,7 +8,7 @@ from typing import Any, Optional
 import json
 
 
-class GrabOphysOutputs(object):
+class GrabOphys(object):
     def __init__(self, 
                  expt_folder_path: Optional[str] = None,
                  raw_folder_path: Optional[str] = None,

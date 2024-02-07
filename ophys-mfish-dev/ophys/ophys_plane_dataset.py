@@ -1,4 +1,4 @@
-from ophys.grab_ophys_outputs import GrabOphysOutputs
+from ophys.grab_ophys import GrabOphys
 from ophys.sync_utilties import get_synchronized_frame_times
 
 from typing import Any, Optional
@@ -55,7 +55,7 @@ class LazyLoadable(object):
         return getattr(obj, self.name)
 
 
-class OphysPlaneDataset(GrabOphysOutputs):
+class OphysPlaneDataset(GrabOphys):
     def __init__(self, 
                  expt_folder_path: Optional[str] = None,
                  raw_folder_path: Optional[str] = None, # where sync file is (pkl file)
