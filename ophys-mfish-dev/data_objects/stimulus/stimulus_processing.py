@@ -615,7 +615,9 @@ def get_visual_stimuli_df(
             timing_table = timing_table[timing_table.start <= display_sequence[-1, 1]]
 
             stim_attributes = stimulus['dimnames'] # ['Contrast', 'TF', 'SF', 'Ori']
-            stim_table = pd.DataFrame(np.column_stack((timing_table['start'],timing_table['end'],time[timing_table['start']],time[timing_table['end']]-time[timing_table['start']])), columns=('frame', 'end_frame', 'time', 'duration'))
+
+            # stim_table = pd.DataFrame(np.column_stack((timing_table['start'], timing_table['end'],time[timing_table['start']],time[timing_table['end']]-time[timing_table['start']])), columns=('frame', 'end_frame', 'time', 'duration'))
+            stim_table = pd.DataFrame(np.column_stack((timing_table['start'], timing_table['end'],time[timing_table['start']],time[timing_table['end']].reset_index(drop=True)-time[timing_table['start']].reset_index(drop=True))), columns=('frame', 'end_frame', 'time', 'duration'))
 
             sweep_table = stimulus['sweep_table']
             sweep_order = stimulus['sweep_order']
