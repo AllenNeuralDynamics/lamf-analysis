@@ -1,5 +1,5 @@
-from ophys.grab_ophys import GrabOphys
-from ophys.sync_utilties import get_synchronized_frame_times
+from data_objects.ophys.grab_ophys import GrabOphys
+from data_objects.sync.sync_utilities import get_synchronized_frame_times
 
 from typing import Any, Optional
 import matplotlib.pyplot as plt
