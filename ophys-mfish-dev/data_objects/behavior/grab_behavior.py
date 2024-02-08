@@ -10,7 +10,7 @@ import json
 
 class GrabBehavior(object):
     def __init__(self, 
-                 raw_folder_path: Optional[str] = None,
+                 raw_folder_path: str = None,
                  oeid: Optional[str] = None,
                  data_path: Optional[str] = None,
                  load_options: Optional[dict] = None):
@@ -28,15 +28,17 @@ class GrabBehavior(object):
             self.oeid = oeid
             self.expt_folder_path = self._find_expt_folder_from_oeid(oeid)
 
-        # processed filepaths dict
-        self.file_parts = {} #might not need
+        self.raw_folder_path = Path(raw_folder_path)
 
+        # processed filepaths dict
+        self.file_parts = {"platform_json": "_platform.json"} #might not need
         self.file_paths = {}
         self._get_file_path_dict()
 
         self.raw_folder_path = Path(raw_folder_path)
         # self.oeid = self.expt_folder_path.stem # NOT SURE FOR BEHAVIOR
         self.sync_file = self._get_sync_file()
+        self.stimulus_pkl = self._get_pkl_file()
 
     def _find_expt_folder_from_oeid(self, oeid):
         # find in results
@@ -47,7 +49,7 @@ class GrabBehavior(object):
     def _find_data_file(self, file_part):
         # find in expt_folder_path
         try:
-            file = list(self.expt_folder_path.glob(f'**/*{file_part}'))[0]
+            file = list(self.raw_folder_path.glob(f'**/*{file_part}'))[0]
         except IndexError:
             file = None
         return file
@@ -69,7 +71,7 @@ class GrabBehavior(object):
         with open(self.file_paths['platform_json'], 'r') as f:
             platform_json = json.load(f)
 
-        stimulus_pkl_path = self.raw_folder_path / "pophys" / platform_json['"stimulus_pkl"']
+        stimulus_pkl_path = self.raw_folder_path / "pophys" / platform_json['stimulus_pkl']
         # stimulus pkl: "stimulus_pkl"
         # load sync h5
         #with open(sync_file_path, 'r') as f:

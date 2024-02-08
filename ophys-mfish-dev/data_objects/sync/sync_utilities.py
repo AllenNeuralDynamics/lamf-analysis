@@ -3,7 +3,7 @@ from typing import Tuple, Optional, List
 import numpy as np
 import pandas as pd
 
-from ophys.sync_dataset import Dataset
+from data_objects.sync.sync_dataset import SyncDataset
 
 """
 Copied from AllenSDK (version = ) on 01/19/2023 by @mattjdavis
@@ -78,7 +78,7 @@ def get_synchronized_frame_times(session_sync_file: Path,
     pd.Series
         An array of times when eye tracking frames were acquired.
     """
-    sync_dataset = Dataset(str(session_sync_file))
+    sync_dataset = SyncDataset(str(session_sync_file))
 
     times = sync_dataset.get_edges(
         "rising", sync_line_label_keys, units="seconds"

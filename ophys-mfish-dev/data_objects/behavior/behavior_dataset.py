@@ -1,4 +1,6 @@
-from ophys.grab_beavior import GrabBehavior
+from data_objects.behavior.grab_behavior import GrabBehavior
+from data_objects.stimulus import stimulus_processing
+from data_objects.sync import sync_utilities
 
 from typing import Any, Optional
 import matplotlib.pyplot as plt
@@ -56,6 +58,7 @@ class LazyLoadable(object):
 
 
 class BehaviorDataset(GrabBehavior):
+    """Includes stimulus, tasks, biometrics"""
     def __init__(self, 
                  raw_folder_path: Optional[str] = None, # where sync file is (pkl file)
                  oeid: Optional[str] = None,
@@ -64,18 +67,25 @@ class BehaviorDataset(GrabBehavior):
                          oeid=oeid,
                          data_path=data_path)
 
+    def get_stimulus_timestamps(self): 
+        self._stimulus_timestamps = sync_utilities.get_synchronized_frame_times(
+            session_sync_file=self.file_paths['sync_file'],
+            sync_line_label_keys=keys.STIMULUS_KEYS,
+            drop_frames=None,
+            trim_after_spike=True)
+        print("STIMMY")
+
+        return self._stimulus_timestamps
 
     def get_stimulus_presentations(self):
-        raw_data_dir = os.path.join(self.data_dir, self.raw_data_folder)
-        ophys_session_dir = os.path.join(raw_data_dir, 'pophys')
-
-        # assuming the only .h5 in top level session dir is the sync and the only .pkl is the stim pickle
-        pkl_file_path = os.path.join(ophys_session_dir, [file for file in os.listdir(ophys_session_dir) if '.pkl' in file][0])
+        pkl_file_path = self.file_paths['stimulus_pkl']
         pkl_data = pd.read_pickle(pkl_file_path)
 
-        self._stimulus_presentations = stimulus_processing.get_stimulus_presentations(pkl_data, self.stimulus_timestamps)
+        self._stimulus_presentations = stimulus_processing.get_stimulus_presentations(
+            pkl_data, self.stimulus_timestamps)
+
         return self._stimulus_presentations
-    
 
-
-    stimulus_presentations = LazyLoadable('_stimulus_presentations', get_stimulus_presentations) 
+    # lazy load
+    stimulus_presentations = LazyLoadable('_stimulus_presentations', get_stimulus_presentations)
+    stimulus_timestamps = LazyLoadable('_stimulus_timestamps', get_stimulus_timestamps)

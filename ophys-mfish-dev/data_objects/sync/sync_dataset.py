@@ -58,11 +58,11 @@ def get_bit(uint_array, bit):
     return np.bitwise_and(uint_array, 2 ** bit).astype(bool).astype(np.uint8)
 
 
-class Dataset(object):
+class SyncDataset(object):
     """
     A sync dataset.  Contains methods for loading
         and parsing the binary data.
-
+    NOTE: MJD renamed Dataset to SyncDataset to avoid name conflicts (02/7/2024)
     Parameters
     ----------
     path : str
