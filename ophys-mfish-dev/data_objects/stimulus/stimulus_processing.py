@@ -516,6 +516,17 @@ def unpack_change_log(change):
 #                    sort=False).sort_values('frame').reset_index()
 #     return df
 
+def get_behavior_key(data):
+    """ data: loaded pkl_file """
+    # TODO: check logic of passive v active
+    # behavior_keys = ['behavior', 'foraging']
+
+    if 'behavior' in data['items']:
+        behavior_key = 'behavior'
+    elif 'foraging' in data['items']:
+        behavior_key = 'foraging'
+
+    return behavior_key
 
 def get_visual_stimuli_df(
         data,
@@ -537,13 +548,8 @@ def get_visual_stimuli_df(
 
     Omid Zobeiri contributed alot to processing STAGE_0 and STAGE_1 data
     """
-    # TODO: check logic of passive v active
-    # behavior_keys = ['behavior', 'foraging']
-    if 'behavior' in data['items']:
-        behavior_key = 'behavior'
-    elif 'foraging' in data['items']:
-        behavior_key = 'foraging'
-
+    behavior_key = get_behavior_key(data)
+    
     if data['items'][behavior_key]['params']['stage'] == 'STAGE_0':
         n_frames = len(time)
         stimuli = data['stimuli']
