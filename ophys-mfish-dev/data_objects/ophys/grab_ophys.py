@@ -9,7 +9,7 @@ import json
 
 
 class GrabOphys(object):
-    def __init__(self, 
+    def __init__(self,
                  expt_folder_path: Optional[str] = None,
                  raw_folder_path: Optional[str] = None,
                  oeid: Optional[str] = None,

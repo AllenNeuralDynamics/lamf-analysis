@@ -202,7 +202,7 @@ def _clip_speed_wraps(speed, time, wrap_indices, t_span: float = 0.25):
     such that it does not exceed the min/max values in the neighborhood.
     """
     corrected_speed = speed.copy()
-    # MJD HACK
+    # MJD HACK ??
     skip_wrap_correction = False
     if skip_wrap_correction: 
         for wrap in wrap_indices:
