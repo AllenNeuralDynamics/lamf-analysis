@@ -13,7 +13,8 @@ class GrabOphys(object):
                  expt_folder_path: Optional[str] = None,
                  raw_folder_path: Optional[str] = None,
                  oeid: Optional[str] = None,
-                 data_path: Optional[str] = None):
+                 data_path: Optional[str] = None,
+                 verbose=False):
 
         assert expt_folder_path or oeid is not None, "Must provide either expt_folder_path or oeid"
 
@@ -28,7 +29,7 @@ class GrabOphys(object):
         elif expt_folder_path:
             self.expt_folder_path = Path(expt_folder_path)
             self.oeid = self.expt_folder_path.stem
-
+        self.verbose = verbose
         # processed filepaths dict
         self.file_parts = {"platform_json": "_platform.json",
                            "processing_json": "processing.json",
@@ -70,7 +71,13 @@ class GrabOphys(object):
         # find in expt_folder_path
         try:
             file = list(self.expt_folder_path.glob(f'**/*{file_part}'))[0]
+            if self.verbose:
+                # just keep filename and parent folder name
+                sub_path = file.parent.name + '/' + file.name
+                print(f"{file_part}: {sub_path}")
         except IndexError:
+            if self.verbose:
+                print(f"{file_part}: not found")
             file = None
         return file
     

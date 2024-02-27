@@ -60,11 +60,13 @@ class OphysPlaneDataset(GrabOphys):
                  expt_folder_path: Optional[str] = None,
                  raw_folder_path: Optional[str] = None, # where sync file is (pkl file)
                  oeid: Optional[str] = None,
-                 data_path: Optional[str] = None):
+                 data_path: Optional[str] = None,
+                 verbose=False):
         super().__init__(expt_folder_path=expt_folder_path,
                          raw_folder_path=raw_folder_path,
                          oeid=oeid,
-                         data_path=data_path)
+                         data_path=data_path,
+                         verbose=verbose)
 
     ####################################################################
     # Data files
