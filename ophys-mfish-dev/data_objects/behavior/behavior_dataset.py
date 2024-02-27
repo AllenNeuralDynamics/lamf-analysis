@@ -74,8 +74,7 @@ class BehaviorDataset(GrabBehavior):
         self._load_behavior_stimulus_file()
 
     def _load_behavior_stimulus_file(self):
-        # Read in the pkl file everytime created
-
+        # load file when BehaviorDataset is instantiated
         self.behavior_stimulus_file = BehaviorStimulusFile.from_file(self.file_paths['stimulus_pkl'])
 
     def get_stimulus_timestamps(self): 
@@ -153,30 +152,55 @@ class BehaviorDataset(GrabBehavior):
     stimulus_presentations = LazyLoadable('_stimulus_presentations', get_stimulus_presentations)
     stimulus_timestamps = LazyLoadable('_stimulus_timestamps', get_stimulus_timestamps)
 
+    @classmethod
+    def _read_behavior_stimulus_timestamps(
+        cls,
+        stimulus_file_lookup: StimulusFileLookup,
+        sync_file: Optional[SyncFile],
+        monitor_delay: float,
+    ) -> StimulusTimestamps:
+        """
+        Assemble the StimulusTimestamps from the SyncFile.
+        If a SyncFile is not available, use the
+        behavior_stimulus_file
+        """
+        if sync_file is not None:
+            stimulus_timestamps = StimulusTimestamps.from_sync_file(
+                sync_file=sync_file, monitor_delay=monitor_delay
+            )
+        else:
+            stimulus_timestamps = StimulusTimestamps.from_stimulus_file(
+                stimulus_file=stimulus_file_lookup.behavior_stimulus_file,
+                monitor_delay=monitor_delay,
+            )
 
-    # @classmethod
-    # def _read_licks(
-    #     cls,
-    #     sync_file: Optional[SyncFile],
-    #     monitor_delay: float,
-    # ) -> Licks:
-    #     """
-    #     Construct the Licks data object for this session
+        return stimulus_timestamps
 
-    #     Note: monitor_delay is a part of the call signature so that
-    #     it can be used in sub-class implementations of this method.
-    #     """
 
-    #     stimulus_timestamps = cls._read_behavior_stimulus_timestamps(
-    #         sync_file=sync_file,
-    #         stimulus_file_lookup=stimulus_file_lookup,
-    #         monitor_delay=0.0,
-    #     )
+    @classmethod
+    def _read_licks(
+        cls,
+        behavior_stimulus_file: BehaviorStimulusFile,
+        sync_file: Optional[SyncFile],
+        monitor_delay: float,
+    ) -> Licks:
+        """
+        Construct the Licks data object for this session
 
-    #     return Licks.from_stimulus_file(
-    #         stimulus_file=stimulus_file_lookup.behavior_stimulus_file,
-    #         stimulus_timestamps=stimulus_timestamps,
-    #     )
+        Note: monitor_delay is a part of the call signature so that
+        it can be used in sub-class implementations of this method.
+        """
+
+        stimulus_timestamps = cls._read_behavior_stimulus_timestamps(
+            sync_file=sync_file,
+            stimulus_file_lookup=stimulus_file_lookup,
+            monitor_delay=0.0,
+        )
+
+        return Licks.from_stimulus_file(
+            stimulus_file=stimulus_file_lookup.behavior_stimulus_file,
+            stimulus_timestamps=stimulus_timestamps,
+        )
 
     # @classmethod
     # def _read_rewards(
