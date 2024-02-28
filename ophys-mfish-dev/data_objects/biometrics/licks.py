@@ -1,11 +1,8 @@
-import logging
-from typing import Optional, Union
+from data_objects.data_files.behavior_stimulus_file import BehaviorStimulusFile
 
+from typing import Optional, Union
 import numpy as np
 import pandas as pd
-from pynwb import NWBFile, TimeSeries, ProcessingModule
-
-
 
 class Licks(object):
 
@@ -18,13 +15,21 @@ class Licks(object):
                 - frame: int
                     frame number in which there was a lick
         """
-        super().__init__(name='licks', value=licks)
+        self.data = licks
 
+    def __getattr__(self, attr):
+        # If the attribute being accessed is not found in the instance, try to get it from the DataFrame
+        if hasattr(self.data, attr):
+            return getattr(self.data, attr)
+        else:
+            raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{attr}'")
+    
     @classmethod
     def from_stimulus_file(
             cls,
             stimulus_file: BehaviorStimulusFile,
-            stimulus_timestamps: Union[StimulusTimestamps, np.ndarray]
+            #stimulus_timestamps: Union[StimulusTimestamps, np.ndarray]
+            stimulus_timestamps: np.ndarray
             ) -> "Licks":
         """Get lick data from pkl file.
         This function assumes that the first sensor in the list of
@@ -56,17 +61,20 @@ class Licks(object):
         lick_frames = (data["items"]["behavior"]["lick_sensors"][0]
                        ["lick_events"])
 
-        if isinstance(stimulus_timestamps, StimulusTimestamps):
-            if not np.isclose(stimulus_timestamps.monitor_delay, 0.0):
-                msg = ("Instantiating licks with monitor_delay = "
-                       f"{stimulus_timestamps.monitor_delay: .2e}; "
-                       "monitor_delay should be zero for Licks "
-                       "data object")
-                raise RuntimeError(msg)
+        # MJD remove
+        # if isinstance(stimulus_timestamps, StimulusTimestamps):
+        #     if not np.isclose(stimulus_timestamps.monitor_delay, 0.0):
+        #         msg = ("Instantiating licks with monitor_delay = "
+        #                f"{stimulus_timestamps.monitor_delay: .2e}; "
+        #                "monitor_delay should be zero for Licks "
+        #                "data object")
+        #         raise RuntimeError(msg)
 
-            lick_times = stimulus_timestamps.value
-        else:
-            lick_times = stimulus_timestamps
+        #     lick_times = stimulus_timestamps.value
+        # else:
+        #     lick_times = stimulus_timestamps
+
+        lick_times = stimulus_timestamps
 
         # there's an occasional bug where the number of logged
         # frames is one greater than the number of vsync intervals.
@@ -79,14 +87,19 @@ class Licks(object):
         #
         # This bugfix copied from
         # https://github.com/AllenInstitute/visual_behavior_analysis/blob
+
         if len(lick_frames) > 0:
             if lick_frames[-1] == len(lick_times):
                 lick_frames = lick_frames[:-1]
-                cls._logger.error('removed last lick - '
-                                  'it fell outside of stimulus_timestamps '
-                                  'range')
-        if isinstance(stimulus_timestamps, StimulusTimestamps):
-            lick_times = np.array([lick_times[frame] for frame in lick_frames])
+                # cls._logger.error('removed last lick - '
+                #                   'it fell outside of stimulus_timestamps '
+                #                   'range')
+        # # MJD REMOVE
+        # if isinstance(stimulus_timestamps, StimulusTimestamps):
+        #     lick_times = np.array([lick_times[frame] for frame in lick_frames])
+
+        # Since we are giving general stim ts, need to get the correct times, just like above
+        lick_times = np.array([lick_times[frame] for frame in lick_frames])
 
         # Make sure licks are the same length as number of frames (mostly for
         # array input).
@@ -96,46 +109,3 @@ class Licks(object):
 
         df = pd.DataFrame({"timestamps": lick_times, "frame": lick_frames})
         return cls(licks=df)
-
-    @classmethod
-    def from_nwb(cls, nwbfile: NWBFile) -> Optional["Licks"]:
-        if 'licking' in nwbfile.processing:
-            lick_module = nwbfile.processing['licking']
-            licks = lick_module.get_data_interface('licks')
-            timestamps = licks.timestamps[:]
-            frame = licks.data[:]
-        else:
-            timestamps = []
-            frame = []
-
-        df = pd.DataFrame({
-            'timestamps': timestamps,
-            'frame': frame
-        })
-
-        return cls(licks=df)
-
-    def to_nwb(self, nwbfile: NWBFile) -> NWBFile:
-
-        # If there is no lick data, do not write
-        # anything to the NWB file (this is
-        # expected for passive sessions)
-        if len(self.value['frame']) == 0:
-            return nwbfile
-
-        lick_timeseries = TimeSeries(
-            name='licks',
-            data=self.value['frame'].values,
-            timestamps=self.value['timestamps'].values,
-            description=('Timestamps and stimulus presentation '
-                         'frame indices for lick events'),
-            unit='N/A'
-        )
-
-        # Add lick interface to nwb file, by way of a processing module:
-        licks_mod = ProcessingModule('licking',
-                                     'Licking behavior processing module')
-        licks_mod.add_data_interface(lick_timeseries)
-        nwbfile.add_processing_module(licks_mod)
-
-        return nwbfile

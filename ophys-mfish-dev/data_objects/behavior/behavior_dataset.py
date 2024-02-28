@@ -2,7 +2,8 @@ from data_objects.behavior.grab_behavior import GrabBehavior
 from data_objects.stimulus import stimulus_processing
 from data_objects.biometrics import running_processing
 from data_objects.sync import sync_utilities
-from data_objects.behavior.behavior_stimulus_file import BehaviorStimulusFile
+from data_objects.biometrics.licks import Licks
+from data_objects.data_files.behavior_stimulus_file import BehaviorStimulusFile
 
 from typing import Any, Optional
 import matplotlib.pyplot as plt
@@ -115,7 +116,7 @@ class BehaviorDataset(GrabBehavior):
         stimulus_timestamps = self.stimulus_timestamps 
 
         running_data_df = running_processing.get_running_df(
-            data=pkl_file_data, time=stimulus_timestamps,
+            data=self.behavior_stimulus_file.data, time=stimulus_timestamps,
             lowpass=lowpass_filter, zscore_threshold=zscore_threshold)
 
         self._running_speed = pd.DataFrame({
@@ -125,10 +126,12 @@ class BehaviorDataset(GrabBehavior):
     running_speed = LazyLoadable('_running_speed', get_running_speed)
 
 
-    # def get_licks(self):
-    #     self._licks = 
-    #     return self._licks
-    # licks = LazyLoadable('_licks', get_licks)
+    def get_licks(self):
+        self._licks = Licks.from_stimulus_file(
+            stimulus_file=self.behavior_stimulus_file,
+            stimulus_timestamps=self.stimulus_timestamps)
+        return self._licks
+    licks = LazyLoadable('_licks', get_licks)
 
 
     # def get_rewards(self):
@@ -152,55 +155,55 @@ class BehaviorDataset(GrabBehavior):
     stimulus_presentations = LazyLoadable('_stimulus_presentations', get_stimulus_presentations)
     stimulus_timestamps = LazyLoadable('_stimulus_timestamps', get_stimulus_timestamps)
 
-    @classmethod
-    def _read_behavior_stimulus_timestamps(
-        cls,
-        stimulus_file_lookup: StimulusFileLookup,
-        sync_file: Optional[SyncFile],
-        monitor_delay: float,
-    ) -> StimulusTimestamps:
-        """
-        Assemble the StimulusTimestamps from the SyncFile.
-        If a SyncFile is not available, use the
-        behavior_stimulus_file
-        """
-        if sync_file is not None:
-            stimulus_timestamps = StimulusTimestamps.from_sync_file(
-                sync_file=sync_file, monitor_delay=monitor_delay
-            )
-        else:
-            stimulus_timestamps = StimulusTimestamps.from_stimulus_file(
-                stimulus_file=stimulus_file_lookup.behavior_stimulus_file,
-                monitor_delay=monitor_delay,
-            )
+    # @classmethod
+    # def _read_behavior_stimulus_timestamps(
+    #     cls,
+    #     stimulus_file_lookup: StimulusFileLookup,
+    #     sync_file: Optional[SyncFile],
+    #     monitor_delay: float,
+    # ) -> StimulusTimestamps:
+    #     """
+    #     Assemble the StimulusTimestamps from the SyncFile.
+    #     If a SyncFile is not available, use the
+    #     behavior_stimulus_file
+    #     """
+    #     if sync_file is not None:
+    #         stimulus_timestamps = StimulusTimestamps.from_sync_file(
+    #             sync_file=sync_file, monitor_delay=monitor_delay
+    #         )
+    #     else:
+    #         stimulus_timestamps = StimulusTimestamps.from_stimulus_file(
+    #             stimulus_file=stimulus_file_lookup.behavior_stimulus_file,
+    #             monitor_delay=monitor_delay,
+    #         )
 
-        return stimulus_timestamps
+    #     return stimulus_timestamps
 
 
-    @classmethod
-    def _read_licks(
-        cls,
-        behavior_stimulus_file: BehaviorStimulusFile,
-        sync_file: Optional[SyncFile],
-        monitor_delay: float,
-    ) -> Licks:
-        """
-        Construct the Licks data object for this session
+    # @classmethod
+    # def _read_licks(
+    #     cls,
+    #     behavior_stimulus_file: BehaviorStimulusFile,
+    #     sync_file: Optional[SyncFile],
+    #     monitor_delay: float,
+    # ) -> Licks:
+    #     """
+    #     Construct the Licks data object for this session
 
-        Note: monitor_delay is a part of the call signature so that
-        it can be used in sub-class implementations of this method.
-        """
+    #     Note: monitor_delay is a part of the call signature so that
+    #     it can be used in sub-class implementations of this method.
+    #     """
 
-        stimulus_timestamps = cls._read_behavior_stimulus_timestamps(
-            sync_file=sync_file,
-            stimulus_file_lookup=stimulus_file_lookup,
-            monitor_delay=0.0,
-        )
+    #     stimulus_timestamps = cls._read_behavior_stimulus_timestamps(
+    #         sync_file=sync_file,
+    #         stimulus_file_lookup=stimulus_file_lookup,
+    #         monitor_delay=0.0,
+    #     )
 
-        return Licks.from_stimulus_file(
-            stimulus_file=stimulus_file_lookup.behavior_stimulus_file,
-            stimulus_timestamps=stimulus_timestamps,
-        )
+    #     return Licks.from_stimulus_file(
+    #         stimulus_file=stimulus_file_lookup.behavior_stimulus_file,
+    #         stimulus_timestamps=stimulus_timestamps,
+    #     )
 
     # @classmethod
     # def _read_rewards(
