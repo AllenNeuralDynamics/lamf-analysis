@@ -5,10 +5,6 @@ import os
 import numpy as np
 import pandas as pd
 
-# from allensdk.brain_observatory.behavior.data_objects.stimuli\
-#     .stimulus_templates import \
-#    StimulusTemplate, StimulusTemplateFactory
-
 from . import utils
 
 

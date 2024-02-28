@@ -3,7 +3,7 @@ from typing import Optional, Callable, Any
 
 import numpy as np
 import h5py
-from data_objects.sync.sync_dataset import SyncDataset
+from .sync_dataset import SyncDataset
 import pandas as pd
 import logging
 try:
@@ -19,7 +19,7 @@ LONG_STIM_THRESHOLD = 0.2     # seconds
 MAX_MONITOR_DELAY = 0.07     # seconds
 
 
-def get_keys(sync_dset:SyncDataset, invalid_sync_line_warning=False) -> dict:
+def get_keys(sync_dset: SyncDataset, invalid_sync_line_warning=False) -> dict:
     """
     Gets the correct keys for the sync file by searching the sync file
     line labels. Removes key from the dictionary if it is not in the

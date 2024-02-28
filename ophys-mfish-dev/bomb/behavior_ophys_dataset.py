@@ -2,8 +2,8 @@
 # inputs are raw_folder_path and processed_folder_path
 # set at
 
-from data_objects.behavior.behavior_dataset import BehaviorDataset
-from data_objects.ophys.ophys_plane_dataset import OphysPlaneDataset
+from bomb.behavior_session_dataset import BehaviorSessionDataset
+from bomb.ophys_plane_dataset import OphysPlaneDataset
 
 
 class BehaviorOphysDataset:
@@ -27,7 +27,7 @@ class BehaviorOphysDataset:
     """
     def __init__(self, raw_folder_path, expt_folder_path):
         self.ophys_plane_dataset = OphysPlaneDataset(expt_folder_path, raw_folder_path)
-        self.behavior_dataset = BehaviorDataset(raw_folder_path)
+        self.behavior_dataset = BehaviorSessionDataset(raw_folder_path)
 
     def __getattr__(self, name):
         if hasattr(self.ophys_plane_dataset, name):

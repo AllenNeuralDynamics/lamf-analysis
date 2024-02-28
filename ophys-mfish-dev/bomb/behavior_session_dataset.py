@@ -1,9 +1,11 @@
-from data_objects.behavior.grab_behavior import GrabBehavior
-from data_objects.stimulus import stimulus_processing
-from data_objects.biometrics import running_processing
-from data_objects.sync import sync_utilities
-from data_objects.biometrics.licks import Licks
-from data_objects.data_files.behavior_stimulus_file import BehaviorStimulusFile
+from bomb.behavior_session_grabber import BehaviorSessionGrabber
+
+from bomb.processing.stimulus import stimulus_processing
+from bomb.processing.biometrics import running_processing
+from bomb.processing.sync import sync_utilities
+from bomb.processing.biometrics.licks import Licks
+
+from bomb.data_files.behavior_stimulus_file import BehaviorStimulusFile
 
 from typing import Any, Optional
 import matplotlib.pyplot as plt
@@ -62,7 +64,7 @@ class LazyLoadable(object):
         return getattr(obj, self.name)
 
 
-class BehaviorDataset(GrabBehavior):
+class BehaviorSessionDataset(BehaviorSessionGrabber):
     """Includes stimulus, tasks, biometrics"""
     def __init__(self, 
                  raw_folder_path: Optional[str] = None, # where sync file is (pkl file)

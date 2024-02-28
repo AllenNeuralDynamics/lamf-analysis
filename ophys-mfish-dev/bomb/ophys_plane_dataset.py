@@ -1,5 +1,5 @@
-from data_objects.ophys.grab_ophys import GrabOphys
-from data_objects.sync.sync_utilities import get_synchronized_frame_times
+from bomb.ophys_plane_grabber import OphysPlaneGrabber
+from bomb.processing.sync import get_synchronized_frame_times
 
 from typing import Any, Optional
 import matplotlib.pyplot as plt
@@ -55,7 +55,7 @@ class LazyLoadable(object):
         return getattr(obj, self.name)
 
 
-class OphysPlaneDataset(GrabOphys):
+class OphysPlaneDataset(OphysPlaneGrabber):
     def __init__(self,
                  expt_folder_path: Optional[str] = None,
                  raw_folder_path: Optional[str] = None, # where sync file is (pkl file)

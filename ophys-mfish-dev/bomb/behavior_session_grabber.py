@@ -8,7 +8,7 @@ from typing import Any, Optional
 import json
 
 
-class GrabBehavior(object):
+class BehaviorSessionGrabber(object):
     def __init__(self, 
                  raw_folder_path: str = None,
                  oeid: Optional[str] = None,
