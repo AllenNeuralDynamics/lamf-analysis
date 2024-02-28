@@ -15,7 +15,7 @@ import os
 import h5py
 import numpy as np
 import xarray as xr
-from .. import data_processing_keys as keys
+from . import data_processing_keys as keys
 
 # OPHYS_KEYS = ('2p_vsync', 'vsync_2p')
 

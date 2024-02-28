@@ -1,5 +1,5 @@
 from bomb.ophys_plane_grabber import OphysPlaneGrabber
-from bomb.processing.sync import get_synchronized_frame_times
+from bomb.processing.sync.sync_utilities import get_synchronized_frame_times
 
 from typing import Any, Optional
 import matplotlib.pyplot as plt
