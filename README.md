@@ -15,10 +15,17 @@ COMB: Compile Ophys Mfish Behavior
 + "experiment" is changed to "plane", so ophys_experiment_id is now ophys_plane_id
 
 ## Installation
-Describe the steps required for a user to begin using the project.
+
+Add these lines to a code ocean capusle docker file
+
+"""
+ RUN git clone https://github.com/AllenNeuralDynamics/ophys-mfish-dev \
+    && cd ophys-mfish-dev \
+    && pip install -e .
+"""
 
 ## Contributing
-Describe how other software developers can contribute to the codebase.
++ Make a PR, tag a reviewer
 
 
 
