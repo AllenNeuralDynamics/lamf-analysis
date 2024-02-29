@@ -18,11 +18,11 @@ COMB: Compile Ophys Mfish Behavior
 
 Add these lines to a code ocean capusle docker file
 
-"""
+```
  RUN git clone https://github.com/AllenNeuralDynamics/ophys-mfish-dev \
     && cd ophys-mfish-dev \
     && pip install -e .
-"""
+```
 
 ## Contributing
 + Make a PR, tag a reviewer
