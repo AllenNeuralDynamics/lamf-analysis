@@ -1,4 +1,4 @@
-from bomb.data_files.behavior_stimulus_file import BehaviorStimulusFile
+from comb.data_files.behavior_stimulus_file import BehaviorStimulusFile
 
 from typing import Optional, Union
 import numpy as np

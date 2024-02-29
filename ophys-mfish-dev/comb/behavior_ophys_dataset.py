@@ -2,8 +2,8 @@
 # inputs are raw_folder_path and processed_folder_path
 # set at
 
-from bomb.behavior_session_dataset import BehaviorSessionDataset
-from bomb.ophys_plane_dataset import OphysPlaneDataset
+from comb.behavior_session_dataset import BehaviorSessionDataset
+from comb.ophys_plane_dataset import OphysPlaneDataset
 
 
 class BehaviorOphysDataset:
@@ -36,3 +36,6 @@ class BehaviorOphysDataset:
             return getattr(self.behavior_dataset, name)
         else:
             raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+
+    # make class to show all attributes
+    
