@@ -8,7 +8,7 @@ from typing import Any, Optional
 import json
 
 
-class GrabBehavior(object):
+class BehaviorSessionGrabber(object):
     def __init__(self, 
                  raw_folder_path: str = None,
                  oeid: Optional[str] = None,
@@ -17,7 +17,7 @@ class GrabBehavior(object):
         
         self.load_options = load_options
 
-        assert raw_folder_path or oeid is not None, "Must provide either expt_folder_path or oeid"
+        assert raw_folder_path or oeid is not None, "Must provide either plane_folder_path or oeid"
 
         if data_path:
             self.data_path = Path(data_path)
@@ -26,7 +26,7 @@ class GrabBehavior(object):
 
         if oeid:
             self.oeid = oeid
-            self.expt_folder_path = self._find_expt_folder_from_oeid(oeid)
+            self.plane_folder_path = self._find_plane_folder_from_oeid(oeid)
 
         self.raw_folder_path = Path(raw_folder_path)
 
@@ -36,18 +36,18 @@ class GrabBehavior(object):
         self._get_file_path_dict()
 
         self.raw_folder_path = Path(raw_folder_path)
-        # self.oeid = self.expt_folder_path.stem # NOT SURE FOR BEHAVIOR
+        # self.oeid = self.plane_folder_path.stem # NOT SURE FOR BEHAVIOR
         self.sync_file = self._get_sync_file()
         self.stimulus_pkl = self._get_pkl_file()
 
-    def _find_expt_folder_from_oeid(self, oeid):
+    def _find_plane_folder_from_oeid(self, oeid):
         # find in results
         found = list(self.data_path.glob(f'**/{oeid}'))
         assert found != 1, f"Found {len(found)} folders with oeid {oeid}"
         return found[0]
 
     def _find_data_file(self, file_part):
-        # find in expt_folder_path
+        # find in plane_folder_path
         try:
             file = list(self.raw_folder_path.glob(f'**/*{file_part}'))[0]
         except IndexError:

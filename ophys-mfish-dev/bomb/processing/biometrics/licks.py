@@ -1,19 +1,12 @@
-"""
-@mattjdavis 2024-02-12
-SDK lite version of Licks class from AllenSDK (stripped DataObject, NWB functionality,
-BehaviorStimulusFile, and StimulusTimestamps classes).
-"""
-import logging
-import pandas as pd
-import numpy as np
-from typing import Union, Optional
+from bomb.data_files.behavior_stimulus_file import BehaviorStimulusFile
 
+from typing import Optional, Union
+import numpy as np
+import pandas as pd
 
 class Licks(object):
-    _logger = logging.getLogger(__name__)
 
     def __init__(self, licks: pd.DataFrame):
-    # def __init__(self, licks: pd.DataFrame):        
         """
         :param licks
             dataframe containing the following columns:
@@ -22,12 +15,19 @@ class Licks(object):
                 - frame: int
                     frame number in which there was a lick
         """
-        super().__init__(name='licks', value=licks)
+        self.data = licks
 
+    def __getattr__(self, attr):
+        # If the attribute being accessed is not found in the instance, try to get it from the DataFrame
+        if hasattr(self.data, attr):
+            return getattr(self.data, attr)
+        else:
+            raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{attr}'")
+    
     @classmethod
     def from_stimulus_file(
             cls,
-            stimulus_file: dict,
+            stimulus_file: BehaviorStimulusFile,
             #stimulus_timestamps: Union[StimulusTimestamps, np.ndarray]
             stimulus_timestamps: np.ndarray
             ) -> "Licks":
@@ -45,7 +45,7 @@ class Licks(object):
 
         Parameters
         ----------
-        stimulus_file : dict
+        stimulus_file : BehaviorStimulusFile
             Input Behavior stims loaded from a pickle file.
         stimulus_timestamps : StimulusTimestamps or np.ndarray
             Timestamps containing lick data either in a StimulusTimestamps
@@ -61,6 +61,7 @@ class Licks(object):
         lick_frames = (data["items"]["behavior"]["lick_sensors"][0]
                        ["lick_events"])
 
+        # MJD remove
         # if isinstance(stimulus_timestamps, StimulusTimestamps):
         #     if not np.isclose(stimulus_timestamps.monitor_delay, 0.0):
         #         msg = ("Instantiating licks with monitor_delay = "
@@ -70,7 +71,9 @@ class Licks(object):
         #         raise RuntimeError(msg)
 
         #     lick_times = stimulus_timestamps.value
-        #else:
+        # else:
+        #     lick_times = stimulus_timestamps
+
         lick_times = stimulus_timestamps
 
         # there's an occasional bug where the number of logged
@@ -84,15 +87,19 @@ class Licks(object):
         #
         # This bugfix copied from
         # https://github.com/AllenInstitute/visual_behavior_analysis/blob
+
         if len(lick_frames) > 0:
             if lick_frames[-1] == len(lick_times):
                 lick_frames = lick_frames[:-1]
-                cls._logger.error('removed last lick - '
-                                  'it fell outside of stimulus_timestamps '
-                                  'range')
-        # MJD 2024-02-12
+                # cls._logger.error('removed last lick - '
+                #                   'it fell outside of stimulus_timestamps '
+                #                   'range')
+        # # MJD REMOVE
         # if isinstance(stimulus_timestamps, StimulusTimestamps):
         #     lick_times = np.array([lick_times[frame] for frame in lick_frames])
+
+        # Since we are giving general stim ts, need to get the correct times, just like above
+        lick_times = np.array([lick_times[frame] for frame in lick_frames])
 
         # Make sure licks are the same length as number of frames (mostly for
         # array input).
