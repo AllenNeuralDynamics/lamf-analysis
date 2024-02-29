@@ -57,14 +57,14 @@ class LazyLoadable(object):
 
 class OphysPlaneDataset(OphysPlaneGrabber):
     def __init__(self,
-                 expt_folder_path: Optional[str] = None,
+                 plane_folder_path: Optional[str] = None,
                  raw_folder_path: Optional[str] = None, # where sync file is (pkl file)
-                 oeid: Optional[str] = None,
+                 opid: Optional[str] = None,
                  data_path: Optional[str] = None,
                  verbose=False):
-        super().__init__(expt_folder_path=expt_folder_path,
+        super().__init__(plane_folder_path=plane_folder_path,
                          raw_folder_path=raw_folder_path,
-                         oeid=oeid,
+                         opid=opid,
                          data_path=data_path,
                          verbose=verbose)
 
@@ -298,19 +298,19 @@ class OphysPlaneDataset(OphysPlaneGrabber):
 
 
     @classmethod
-    def construct_and_load(cls, experiment_id, cache_dir=None, **kwargs):
+    def construct_and_load(cls, ophys_plane_id, cache_dir=None, **kwargs):
         ''' Instantiate a VisualBehaviorOphysDataset and load its data
 
         Parameters
         ----------
-        experiment_id : int
-            identifier for this experiment
+        ophys_plane_id : int
+            identifier for this experiment/plane
         cache_dir : str
-            directory containing this experiment's
+            directory containing this experiment/plane
 
         '''
 
-        obj = cls(experiment_id, cache_dir=cache_dir, **kwargs)
+        obj = cls(ophys_plane_id, cache_dir=cache_dir, **kwargs)
 
         obj.get_max_projection_png()
         obj.get_average_projection_png()

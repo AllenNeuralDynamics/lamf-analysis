@@ -10,25 +10,25 @@ import json
 
 class OphysPlaneGrabber(object):
     def __init__(self,
-                 expt_folder_path: Optional[str] = None,
+                 plane_folder_path: Optional[str] = None,
                  raw_folder_path: Optional[str] = None,
-                 oeid: Optional[str] = None,
+                 opid: Optional[str] = None,
                  data_path: Optional[str] = None,
                  verbose=False):
 
-        assert expt_folder_path or oeid is not None, "Must provide either expt_folder_path or oeid"
+        assert plane_folder_path or opid is not None, "Must provide either plane_folder_path or opid"
 
         if data_path:
             self.data_path = Path(data_path)
         else:
             self.data_path = Path('../data')
 
-        if oeid:
-            self.oeid = oeid
-            self.expt_folder_path = self._find_expt_folder_from_oeid(oeid)
-        elif expt_folder_path:
-            self.expt_folder_path = Path(expt_folder_path)
-            self.oeid = self.expt_folder_path.stem
+        if opid:
+            self.opid = opid
+            self.plane_folder_path = self._find_plane_folder_from_opid(opid)
+        elif plane_folder_path:
+            self.plane_folder_path = Path(plane_folder_path)
+            self.opid = self.plane_folder_path.stem
         self.verbose = verbose
         # processed filepaths dict
         self.file_parts = {"platform_json": "_platform.json",
@@ -61,16 +61,16 @@ class OphysPlaneGrabber(object):
         # raw
         # for local, to create a full dataset, must speficity the raw_folder_path
 
-    def _find_expt_folder_from_oeid(self, oeid):
+    def _find_plane_folder_from_opid(self, opid):
         # find in results
-        found = list(self.data_path.glob(f'**/{oeid}'))
-        assert found != 1, f"Found {len(found)} folders with oeid {oeid}"
+        found = list(self.data_path.glob(f'**/{opid}'))
+        assert found != 1, f"Found {len(found)} folders with opid {opid}"
         return found[0]
 
     def _find_data_file(self, file_part):
-        # find in expt_folder_path
+        # find in plane_folder_path
         try:
-            file = list(self.expt_folder_path.glob(f'**/*{file_part}'))[0]
+            file = list(self.plane_folder_path.glob(f'**/*{file_part}'))[0]
             if self.verbose:
                 # just keep filename and parent folder name
                 sub_path = file.parent.name + '/' + file.name
