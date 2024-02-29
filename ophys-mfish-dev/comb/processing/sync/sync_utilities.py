@@ -3,7 +3,7 @@ from typing import Tuple, Optional, List
 import numpy as np
 import pandas as pd
 
-from bomb.processing.sync.sync_dataset import SyncDataset
+from comb.processing.sync.sync_dataset import SyncDataset
 
 """
 Copied from AllenSDK (version = ) on 01/19/2023 by @mattjdavis

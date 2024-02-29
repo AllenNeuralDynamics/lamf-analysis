@@ -1,11 +1,11 @@
-from bomb.behavior_session_grabber import BehaviorSessionGrabber
+from comb.behavior_session_grabber import BehaviorSessionGrabber
 
-from bomb.processing.stimulus import stimulus_processing
-from bomb.processing.biometrics import running_processing
-from bomb.processing.sync import sync_utilities
-from bomb.processing.biometrics.licks import Licks
+from comb.processing.stimulus import stimulus_processing
+from comb.processing.biometrics import running_processing
+from comb.processing.sync import sync_utilities
+from comb.processing.biometrics.licks import Licks
 
-from bomb.data_files.behavior_stimulus_file import BehaviorStimulusFile
+from comb.data_files.behavior_stimulus_file import BehaviorStimulusFile
 
 from typing import Any, Optional
 import matplotlib.pyplot as plt
