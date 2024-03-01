@@ -1,7 +1,7 @@
 from comb.ophys_plane_grabber import OphysPlaneGrabber
 from comb.processing.sync.sync_utilities import get_synchronized_frame_times
 
-from typing import Any, Optional
+from typing import Any, Optional,Union
 import matplotlib.pyplot as plt
 import pandas as pd
 import json
@@ -9,6 +9,7 @@ import os
 import h5py
 import numpy as np
 import xarray as xr
+from pathlib import Path
 
 OPHYS_KEYS = ('2p_vsync', 'vsync_2p')
 
@@ -57,11 +58,11 @@ class LazyLoadable(object):
 
 class OphysPlaneDataset(OphysPlaneGrabber):
     def __init__(self,
-                 plane_folder_path: Optional[str] = None,
-                 raw_folder_path: Optional[str] = None, # where sync file is (pkl file)
-                 opid: Optional[str] = None,
-                 data_path: Optional[str] = None,
-                 verbose=False):
+                plane_folder_path: Union[str, Path] = None,
+                raw_folder_path: Optional[str] = None, # where sync file is (pkl file)
+                opid: Optional[str] = None,
+                data_path: Optional[str] = None,
+                verbose=False):
         super().__init__(plane_folder_path=plane_folder_path,
                          raw_folder_path=raw_folder_path,
                          opid=opid,
@@ -125,7 +126,7 @@ class OphysPlaneDataset(OphysPlaneGrabber):
         for i, roi_id in enumerate(roi_ids):
             traces_df.loc[roi_id, 'raw_fluorescence_traces'] = traces[i, :]
         traces_df = traces_df.rename(columns={'roi_id': 'cell_roi_id'})
-        traces_df = self._add_csid_to_table(traces_df)
+#        traces_df = self._add_csid_to_table(traces_df)
         self._raw_fluorescence_traces = traces_df
         return self._raw_fluorescence_traces
 

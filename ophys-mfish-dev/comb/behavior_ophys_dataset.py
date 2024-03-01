@@ -5,6 +5,9 @@
 from comb.behavior_session_dataset import BehaviorSessionDataset
 from comb.ophys_plane_dataset import OphysPlaneDataset
 
+from typing import Union, Optional
+from pathlib import Path
+
 
 class BehaviorOphysDataset:
     """A class to combine an OphysPlaneDataset and a BehaviorDataset 
@@ -25,9 +28,12 @@ class BehaviorOphysDataset:
     Assume raw and processed data assets are attached to capsule.
 
     """
-    def __init__(self, raw_folder_path, plane_folder_path):
-        self.ophys_plane_dataset = OphysPlaneDataset(plane_folder_path, raw_folder_path)
-        self.behavior_dataset = BehaviorSessionDataset(raw_folder_path)
+    def __init__(self,
+                plane_folder_path: Union[str, Path],
+                raw_folder_path: Union[str, Path]):
+
+        self.ophys_plane_dataset = OphysPlaneDataset(plane_folder_path=plane_folder_path,raw_folder_path=raw_folder_path)
+        self.behavior_dataset = BehaviorSessionDataset(raw_folder_path=raw_folder_path)
 
     def __getattr__(self, name):
         if hasattr(self.ophys_plane_dataset, name):
@@ -37,5 +43,6 @@ class BehaviorOphysDataset:
         else:
             raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
 
-    # make class to show all attributes
+    def __dir__(self):
+        return list(set(dir(self.ophys_plane_dataset) + dir(self.behavior_dataset)))
     

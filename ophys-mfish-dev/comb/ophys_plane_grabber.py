@@ -4,13 +4,13 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from pathlib import Path
 import glob
-from typing import Any, Optional
+from typing import Any, Optional,Union
 import json
 
 
 class OphysPlaneGrabber(object):
     def __init__(self,
-                 plane_folder_path: Optional[str] = None,
+                 plane_folder_path: Union[str, Path] = None,
                  raw_folder_path: Optional[str] = None,
                  opid: Optional[str] = None,
                  data_path: Optional[str] = None,
