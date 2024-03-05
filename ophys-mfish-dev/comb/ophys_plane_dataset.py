@@ -69,9 +69,64 @@ class OphysPlaneDataset(OphysPlaneGrabber):
                          data_path=data_path,
                          verbose=verbose)
 
+        self.metadata = self._set_metadata()
+
+        # keep for legacy purposes
+        self.ophys_experiment_id = self._resolve_ophys_experiment_id()
+
+        # no opid is given, set as= ophys_experiment_id
+        if self.opid is None:
+            self.opid = self.ophys_experiment_id
+
     ####################################################################
     # Data files
     ####################################################################
+
+
+    def _resolve_ophys_experiment_id(self):
+        
+        if self.plane_folder_path is not None:
+            ophys_experiment_id = self.plane_folder_path.stem
+        elif self.opid is not None:
+            ophys_experiment_id = self.opid
+
+        return ophys_experiment_id
+
+
+    def _parse_mesoscope_metadata(self):
+        # assert self.file_paths['mesoscope_splitting_json'] not none
+        assert self.file_paths['mesoscope_splitting_json'] is not None, "mesoscope_splitting_json is not found, unsupported recording type"
+        
+        split_dict = {}
+        with open(self.file_paths['mesoscope_splitting_json']) as json_file:
+            split_json = json.load(json_file)
+
+        split_dict['plane_group_count'] = len(split_json['plane_groups'])
+
+        for i, plane_group in enumerate(split_json['plane_groups']):
+            for plane_dict in plane_group['ophys_experiments']:
+                # find index of plane['experiment_id'] that matches self.opid
+                if str(plane_dict['experiment_id']) == self.opid:
+                    split_dict['roi_index'] = plane_dict['roi_index']
+                    split_dict['plane_group_index'] = i
+                    split_dict['scanfield_z'] = plane_dict['scanfield_z'] # TODO rename 
+
+        return split_dict
+
+    def _set_metadata(self):
+        metadata = {}
+        with open(self.file_paths['platform_json']) as json_file:
+            platform = json.load(json_file)
+
+        split_dict = self._parse_mesoscope_metadata()
+
+        # combine
+        metadata.update(split_dict)
+
+        return metadata
+
+
+        
 
     def _add_csid_to_table(self, table):
         """Cell specimen ids are not avaiable in CodeOcean, as they were in LIMS (01/18/2024)
@@ -105,7 +160,7 @@ class OphysPlaneDataset(OphysPlaneGrabber):
         self._motion_transform = pd.read_csv()
         return self._motion_transform
 
-    # TODO: should we rename the attribute to segmentation?
+    # TODO: should we rename the attribute to segmentation? (MJD)
     def get_cell_specimen_table(self): 
         with open(self.file_paths['segmentation_output_json']) as json_file:
             segmentation_output = json.load(json_file)
@@ -132,7 +187,7 @@ class OphysPlaneDataset(OphysPlaneGrabber):
 
     def get_neuropil_traces(self):
         # TODO: cell_roi_ids are removed from this table. Should we add them back?
-        # TODO: shoudl we rename this attribute to neuropil_corrected_traces?
+        # TODO: should we rename this attribute to neuropil_corrected_traces?
 
         f = h5py.File(self.file_paths['neuropil_correction_h5'], mode='r')
         neuropil_traces_array = np.asarray(f['FC'])
@@ -210,7 +265,7 @@ class OphysPlaneDataset(OphysPlaneGrabber):
         self._demixed_traces = demixed_traces
         return self._demixed_traces
 
-    # OLD DFF H5; MJD 02/01/2024; may want to reimplement
+    # dff_traces where stored differently in LIMS processed data
     # def get_dff_traces(self):
 
     #     f = h5py.File(self.file_paths['dff_h5'], mode='r')
@@ -275,9 +330,16 @@ class OphysPlaneDataset(OphysPlaneGrabber):
                                                         sync_line_label_keys=OPHYS_KEYS,
                                                         drop_frames=None,
                                                         trim_after_spike=True)
-        # hack - need to get info on image_plane_count and image_plane_group from metadta
-        self._ophys_timestamps = ophys_timestamps#[::4] MG HACK?????
-        #self.all_ophys_timestamps = ophys_timestamps         
+        # resample for mesoscope data, planes are interleaved
+        ts_len = len(ophys_timestamps)
+
+        group_count = self.metadata['plane_group_count']
+        plane_group = self.metadata['plane_group_index']                                       
+        self._ophys_timestamps = ophys_timestamps[plane_group::group_count]
+        rs_len = len(self._ophys_timestamps)
+
+        if self.verbose:
+            print(f"ophys_timestamps: {ts_len} -> {rs_len} (resampled for mesoscope data)")
         return self._ophys_timestamps
 
     # These data products should be available in processed data assets
