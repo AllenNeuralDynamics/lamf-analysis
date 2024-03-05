@@ -140,3 +140,4 @@ dmypy.json
 
 # ophys-mfish-dev
 lims_tables/
+ophys-mfish-dev/notebooks/comb-development-nb.ipynb

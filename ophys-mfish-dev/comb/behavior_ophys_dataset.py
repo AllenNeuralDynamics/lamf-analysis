@@ -71,7 +71,7 @@ class BehaviorMultiplaneOphysDataset:
         for plane_folder in self.session_folder_path.glob("*"):
             if plane_folder.is_dir() and not plane_folder.stem.startswith("nextflow"):
                 opid = plane_folder.stem
-                self.ophys_datasets[opid] = OphysPlaneDataset(plane_folder)
+                self.ophys_datasets[opid] = OphysPlaneDataset(plane_folder, raw_folder_path=self.raw_folder_path)
 
     def __getattr__(self, name):
         if hasattr(self.datasets, name):
