@@ -33,9 +33,10 @@ class BehaviorOphysDataset:
     """
     def __init__(self,
                 plane_folder_path: Union[str, Path],
-                raw_folder_path: Union[str, Path]):
+                raw_folder_path: Union[str, Path],
+                verbose: Optional[bool] = False):
 
-        self.ophys_plane_dataset = OphysPlaneDataset(plane_folder_path=plane_folder_path,raw_folder_path=raw_folder_path)
+        self.ophys_plane_dataset = OphysPlaneDataset(plane_folder_path=plane_folder_path,raw_folder_path=raw_folder_path,verbose=verbose)
         self.behavior_dataset = BehaviorSessionDataset(raw_folder_path=raw_folder_path)
 
     def __getattr__(self, name):

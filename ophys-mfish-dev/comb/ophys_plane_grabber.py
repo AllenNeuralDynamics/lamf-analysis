@@ -44,11 +44,12 @@ class OphysPlaneGrabber(object):
                            "neuropil_correction_h5": "neuropil_correction.h5",
                            "neuropil_masks_json": "neuropil_masks.json",
                            "neuropil_trace_output_json": "neuropil_trace_output.json",
-                           "demixing_output_h5": "demixing_output.h5",
-                           "demixing_output_json": "demixing_output.json",
+                           "demixing_h5": "demixing_output.h5",
+                           "demixing_json": "demixing_output.json",
                            "dff_h5": "dff.h5",
                            "extract_traces_json": "extract_traces.json",
-                           "events_oasis_h5": "events_oasis.h5"}
+                           "events_oasis_h5": "events_oasis.h5",
+                           "mesoscope_splitting_json": "MESOSCOPE_FILE_SPLITTING"}
         self.file_paths = {}
         self._get_file_path_dict()
 
@@ -70,7 +71,7 @@ class OphysPlaneGrabber(object):
     def _find_data_file(self, file_part):
         # find in plane_folder_path
         try:
-            file = list(self.plane_folder_path.glob(f'**/*{file_part}'))[0]
+            file = list(self.plane_folder_path.glob(f'**/*{file_part}*'))[0]
             if self.verbose:
                 # just keep filename and parent folder name
                 sub_path = file.parent.name + '/' + file.name
