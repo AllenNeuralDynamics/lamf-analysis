@@ -88,9 +88,9 @@ class BehaviorMultiplaneOphysDataset:
         ----------
         traces_key : str, optional
             The key to access the traces
-            options are ["dff", "events", "filtered_events"]
+            options are ["dff", "events", "filtered_events"] TODO: add raw, demix, etx
             by default "dff"
-        traces_key: str
+        return_
         
         """
 

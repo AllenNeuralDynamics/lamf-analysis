@@ -11,25 +11,7 @@ import numpy as np
 import xarray as xr
 from pathlib import Path
 
-OPHYS_KEYS = ('2p_vsync', 'vsync_2p')
-
-STIMULUS_KEYS = ('frames', 'stim_vsync', 'vsync_stim')
-PHOTODIODE_KEYS = ('photodiode', 'stim_photodiode')
-EYE_TRACKING_KEYS = ("eye_frame_received",  # Expected eye tracking
-                                            # line label after 3/27/2020
-                        # clocks eye tracking frame pulses (port 0, line 9)
-                        "cam2_exposure",
-                        # previous line label for eye tracking
-                        # (prior to ~ Oct. 2018)
-                        "eyetracking",
-                        "eye_cam_exposing",
-                        "eye_tracking")  # An undocumented, but possible eye tracking line label  # NOQA E114
-BEHAVIOR_TRACKING_KEYS = ("beh_frame_received",  # Expected behavior line label after 3/27/2020  # NOQA E127
-                                                 # clocks behavior tracking frame # NOQA E127
-                                                 # pulses (port 0, line 8)
-                            "cam1_exposure",
-                            "behavior_monitoring")
-
+from . import data_file_keys
 
 class LazyLoadable(object):
     def __init__(self, name, calculate):
@@ -78,6 +60,13 @@ class OphysPlaneDataset(OphysPlaneGrabber):
         if self.opid is None:
             self.opid = self.ophys_experiment_id
 
+
+        # currently pipeline give all nan traces; lets remove
+        self._set_all_nan_traces_invalid()
+
+        self.metadata['ophys_frame_rate'] = self._get_ophys_frame_rate()
+
+
     ####################################################################
     # Data files
     ####################################################################
@@ -95,7 +84,7 @@ class OphysPlaneDataset(OphysPlaneGrabber):
 
     def _parse_mesoscope_metadata(self):
         # assert self.file_paths['mesoscope_splitting_json'] not none
-        assert self.file_paths['mesoscope_splitting_json'] is not None, "mesoscope_splitting_json is not found, unsupported recording type"
+        assert self.file_paths['mesoscope_splitting_json'] is not None, "mesoscope_splitting_json is not found, only mesoscope data is supported"
         
         split_dict = {}
         with open(self.file_paths['mesoscope_splitting_json']) as json_file:
@@ -113,20 +102,49 @@ class OphysPlaneDataset(OphysPlaneGrabber):
 
         return split_dict
 
+    def _get_ophys_frame_rate(self):
+
+        dt = self.ophys_timestamps.diff().mean()
+        frame_rate = 1/dt
+
+        if self.verbose:
+            print("Calculating frame rate from ophys_timestamps, not metadata")
+
+        return frame_rate
+
+
+
     def _set_metadata(self):
         metadata = {}
         with open(self.file_paths['platform_json']) as json_file:
             platform = json.load(json_file)
 
         split_dict = self._parse_mesoscope_metadata()
-
-        # combine
         metadata.update(split_dict)
 
         return metadata
 
+    def _set_all_nan_traces_invalid(self):
 
-        
+        dff = self.dff_traces
+        nan_ids = []
+        # iterate dff.dff, check if array is all nan
+        for cell_specimen_id, trace in dff.dff.items():
+            if np.all(np.isnan(trace)):
+                nan_ids.append(cell_specimen_id)
+        print(nan_ids)
+
+        new_csid_table = self.cell_specimen_table
+        new_csid_table.loc[nan_ids, 'valid_roi'] = False
+
+        # for each nan_ids, set append 'nan trace' to exclusion_labels cell
+        for cell_specimen_id in nan_ids:
+            new_csid_table.loc[cell_specimen_id, 'exclusion_labels'] = new_csid_table.loc[cell_specimen_id, 'exclusion_labels'] + ['nan trace']
+
+        self._cell_specimen_table = new_csid_table
+
+        if self.verbose:
+            print(f"Set {len(nan_ids)} cell_specimen_ids to invalid_roi, found all nan traces")
 
     def _add_csid_to_table(self, table):
         """Cell specimen ids are not avaiable in CodeOcean, as they were in LIMS (01/18/2024)
@@ -327,12 +345,12 @@ class OphysPlaneDataset(OphysPlaneGrabber):
     def get_ophys_timestamps(self):
         sync_fp = self.file_paths['sync_file']
         ophys_timestamps = get_synchronized_frame_times(session_sync_file=sync_fp,
-                                                        sync_line_label_keys=OPHYS_KEYS,
+                                                        sync_line_label_keys=data_file_keys.OPHYS_KEYS,
                                                         drop_frames=None,
                                                         trim_after_spike=True)
-        # resample for mesoscope data, planes are interleaved
-        ts_len = len(ophys_timestamps)
 
+        # resample for mesoscope data, planes are interleaved in sync file
+        ts_len = len(ophys_timestamps)
         group_count = self.metadata['plane_group_count']
         plane_group = self.metadata['plane_group_index']                                       
         self._ophys_timestamps = ophys_timestamps[plane_group::group_count]
