@@ -62,7 +62,10 @@ class OphysPlaneDataset(OphysPlaneGrabber):
 
 
         # currently pipeline give all nan traces; lets remove
-        self._set_all_nan_traces_invalid()
+        try:
+            self._set_all_nan_traces_invalid()
+        except TypeError: # No dff_file
+            pass
 
         self.metadata['ophys_frame_rate'] = self._get_ophys_frame_rate()
 
@@ -139,7 +142,8 @@ class OphysPlaneDataset(OphysPlaneGrabber):
 
         # for each nan_ids, set append 'nan trace' to exclusion_labels cell
         for cell_specimen_id in nan_ids:
-            new_csid_table.loc[cell_specimen_id, 'exclusion_labels'] = new_csid_table.loc[cell_specimen_id, 'exclusion_labels'] + ['nan trace']
+            if new_csid_table.loc[cell_specimen_id, 'exclusion_labels'] is None:
+                new_csid_table.loc[cell_specimen_id, 'exclusion_labels'] = ['nan trace']
 
         self._cell_specimen_table = new_csid_table
 
