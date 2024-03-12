@@ -31,14 +31,15 @@ class DataAssetLoader(CodeOceanDataExplorer):
 
 
     def attach(self, 
-               data: Union[dict,list]):
+               data: Union[dict,list,Path]):
         """Attach a data asset to the capsule and update DAL
 
 
         Parameters
         ----------
         data : Union[dict,list]
-            Data asset to attach to the capsule. If list, should be a list of dictionaries with "name" and "id" fields
+            Data asset to attach to the capsule. If list, should be a list of dictionaries with 
+            at minimum "name" and "id" fields.
 
         """
         if isinstance(data, dict):
