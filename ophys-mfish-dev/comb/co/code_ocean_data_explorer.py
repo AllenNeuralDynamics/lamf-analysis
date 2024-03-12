@@ -19,6 +19,8 @@ class CodeOceanDataExplorer(object):
 
         self.client = self._get_client()
 
+        self.all_data_assets = self._get_all_multiplane_data_assets()
+
     
     def _get_client(self):
         token, domain = self._code_ocean_credentials()
@@ -36,7 +38,7 @@ class CodeOceanDataExplorer(object):
         domain = self._get_env_var("CODEOCEAN_DOMAIN")
         return token, domain
 
-    def get_all_multiplane_data_assets(self):
+    def _get_all_multiplane_data_assets(self):
 
         query = "multiplane"
         client = self.client
