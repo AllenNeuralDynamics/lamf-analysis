@@ -65,11 +65,11 @@ class CodeOceanDataExplorer(object):
             return filtered_assets
 
     def get_derived_multiplane_data_assets(self):
-        derived = self._filtered_by_tags(self.get_all_multiplane_data_assets(), 'derived')
+        derived = self._filtered_by_tags(self.all_data_assets, 'derived')
         return derived
 
     def get_raw_multiplane_data_assets(self):
-        raw = self._filtered_by_tags(self.get_all_multiplane_data_assets(), 'raw')
+        raw = self._filtered_by_tags(self.all_data_assets, 'raw')
         return raw
 
     def _get_data_assets_by_type(self, asset_type):

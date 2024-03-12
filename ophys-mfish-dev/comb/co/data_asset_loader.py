@@ -5,12 +5,7 @@ import yaml
 import requests
 from typing import Optional, Union
 from pathlib import Path
-
-
-
-
-
-
+import pandas as pd
 
 
 class DataAssetLoader(CodeOceanDataExplorer):
@@ -35,6 +30,67 @@ class DataAssetLoader(CodeOceanDataExplorer):
         self._update_linked_key()
 
 
+    def attach_linked_data_asset(self, name: Optional[str] = None, id: str = Optional[None], data_dir = "/root/capsule/data/"):
+        """
+        Attach linked data asset to capsule
+
+        Parameters
+        ----------
+        name : str
+            Name of data asset to attach
+        id : str
+            ID of data asset to attach
+        data_dir : str
+            Directory containing data assets
+        """
+
+        # check if name or id is 
+        
+        try :
+            if name is not None:
+                id = self.attached_dict[name]["id"]
+            elif id is not None:
+                name = [k for k,v in self.attached_dict.items() if v["id"] == id][0]
+            else:
+                raise ValueError("Must provide either name or id")
+
+            data = {"name": name, "id": id}
+        except KeyError:
+            print(f"Data asset {name} not found in attached data assets")
+
+            # TODO: could attach if not already attached
+            return
+
+        
+        derived = True if "processed" in name else False
+        if derived:
+            df = pd.DataFrame(self.get_raw_multiplane_data_assets())
+        else:
+            df = pd.DataFrame(self.get_derived_multiplane_data_assets())
+
+        df["basename"] = df["name"].apply(self._data_asset_base_name)
+
+        # find match in basename col
+        linked_name = df[df["basename"] == self._data_asset_base_name(name)]["name"].values[0]
+        linked_id = df[df["basename"] == self._data_asset_base_name(name)]["id"].values[0]
+
+        # if linked_name none, return
+        if linked_name is None:
+            print(f"LINKED ASSET NOT FOUND IN CODE OCEAN: {name}")
+            return
+
+        if self._check_if_attached(linked_name):
+            print(f"LINKED ASSET ALREADY ATTACHED: {name}")
+            return
+        else:
+            data = {"name": linked_name, "id": linked_id}
+            self.attach_assets_to_capsule(data=[data]) # list
+            self.attached_dict = self.get_attached_data_assets()
+            self._update_linked_key()
+        
+        return df 
+        
+
 
     def linked_data_assets(self):
         return {k:v for k,v in self.attached_dict.items() if v["linked_attached"]}
@@ -53,6 +109,12 @@ class DataAssetLoader(CodeOceanDataExplorer):
     
     def _data_asset_base_name(self, name):
         return name.split("_")[0] + "_" +  name.split("_")[1] + "_" + name.split("_")[2]
+
+    def _check_if_attached(self, name):
+        for asset in self.attached_dict:
+            if name == asset:
+                return True
+        return False
 
 
     def _check_for_linked_in_dict(self, name,check_dict):
@@ -95,17 +157,9 @@ class DataAssetLoader(CodeOceanDataExplorer):
             # set id
             data_assets_dict[name]["id"] = self._get_id_for_name(name)
 
-
-            
-
         return data_assets_dict
 
-
-
-
-
-
-    def attach_assets(data: Union[list, str, Path], api_secret_name = "CODEOCEAN_TOKEN"):
+    def attach_assets_to_capsule(self, data: Union[list, str, Path], api_secret_name = "CODEOCEAN_TOKEN"):
         """
         list should be dict with "name" and "id" fields
         
@@ -119,9 +173,16 @@ class DataAssetLoader(CodeOceanDataExplorer):
             for d in data:
                 assert isinstance(d, dict), "All elements of the list must be dictionaries"
 
+                
         url = f'https://codeocean.allenneuraldynamics.org/api/v1/capsules/{os.getenv("CO_CAPSULE_ID")}/data_assets'
         headers = {"Content-Type": "application/json"} 
         auth = ("'" + os.getenv(api_secret_name), "'")
-        print(data)
+
         response = requests.post(url=url, headers=headers, auth=auth, json=data)
         print(response.text)
+
+        # LIST HANDLING
+        # if response["mount_state "] =="unchanged":
+        #     print(f"Data asset {data['name']} already attached")
+        # elif response["mount_state "] =="mounted":
+        #     print(f"Data asset {data['name']} attached")
