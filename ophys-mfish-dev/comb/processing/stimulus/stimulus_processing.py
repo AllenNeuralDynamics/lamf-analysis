@@ -4,9 +4,27 @@ from typing import Dict, List, Tuple, Union, Optional
 import os
 import numpy as np
 import pandas as pd
+from pathlib import Path
 
 from . import utils
 
+from comb.project_constants import (
+    PROJECT_CODES,
+    VBO_ACTIVE_MAP,
+    VBO_PASSIVE_MAP,
+)
+
+def get_behavior_key(data):
+    """ data: loaded pkl_file """
+    # TODO: check logic of passive v active
+    # behavior_keys = ['behavior', 'foraging']
+
+    if 'behavior' in data['items']:
+        behavior_key = 'behavior'
+    elif 'foraging' in data['items']:
+        behavior_key = 'foraging'
+
+    return behavior_key
 
 def load_pickle(pstream):
     return pickle.load(pstream, encoding="bytes")
@@ -75,6 +93,7 @@ def get_images_dict(pkl) -> Dict:
     # Get image file name;
     # These are encoded case-insensitive in the pickle file :/
     filename = utils.convert_filepath_caseinsensitive(metadata['image_set'])
+    filename = adjust_image_set_path_for_co(filename)
 
     image_set = load_pickle(open(filename, 'rb'))
     images = []
@@ -247,6 +266,27 @@ def get_gratings_metadata(stimuli: Dict, start_idx: int = 0) -> pd.DataFrame:
 #         )
 #         return None
 
+def adjust_image_set_path_for_co(image_set_filename):
+    """
+    Adjusts the image set path for the CO experiment. The image set path
+    is adjusted to remove the 'images' directory from the path.
+    Parameters
+    ----------
+    image_set_filename: str
+        The path to the image set file
+
+    Returns
+    -------
+    str:
+        The adjusted path to the image set file
+
+    """
+    image_path_stem = Path(image_set_filename).stem
+    co_path = Path("/ophys-mfish-dev/ophys-mfish-dev/comb/image_dictionaries")
+    # add pkl to the end of the path
+    image_path = co_path / f"{image_path_stem}.pkl"
+
+    return image_path
 
 def get_stimulus_metadata(pkl) -> pd.DataFrame:
     """
@@ -273,6 +313,7 @@ def get_stimulus_metadata(pkl) -> pd.DataFrame:
         stimulus_index_df = pd.DataFrame(images['image_attributes'])
         image_set_filename = utils.convert_filepath_caseinsensitive(
             images['metadata']['image_set'])
+        image_set_filename = adjust_image_set_path_for_co(image_set_filename)
         stimulus_index_df['image_set'] = utils.get_image_set_name(
             image_set_path=image_set_filename)
     else:
@@ -512,17 +553,7 @@ def unpack_change_log(change):
 #                    sort=False).sort_values('frame').reset_index()
 #     return df
 
-def get_behavior_key(data):
-    """ data: loaded pkl_file """
-    # TODO: check logic of passive v active
-    # behavior_keys = ['behavior', 'foraging']
 
-    if 'behavior' in data['items']:
-        behavior_key = 'behavior'
-    elif 'foraging' in data['items']:
-        behavior_key = 'foraging'
-
-    return behavior_key
 
 def get_visual_stimuli_df(
         data,
@@ -760,3 +791,316 @@ def is_change_event(stimulus_presentations: pd.DataFrame) -> pd.Series:
     is_change = is_change.fillna(False)
 
     return is_change
+
+
+def get_flashes_since_change(
+    stimulus_presentations: pd.DataFrame,
+) -> pd.Series:
+    """Calculate the number of times an images is flashed between changes.
+
+    Parameters
+    ----------
+    stimulus_presentations : pandas.DataFrame
+        Table of presented stimuli with ``is_change`` column already
+        calculated.
+
+    Returns
+    -------
+    flashes_since_change : pandas.Series
+        Number of times the same image is flashed between image changes.
+    """
+    flashes_since_change = pd.Series(
+        data=np.zeros(len(stimulus_presentations), dtype=float),
+        index=stimulus_presentations.index,
+        name="flashes_since_change",
+        dtype="int",
+    )
+    for idx, (pd_index, row) in enumerate(stimulus_presentations.iterrows()):
+        omitted = row["omitted"]
+        if pd.isna(row["omitted"]):
+            omitted = False
+        if row["image_name"] == "omitted" or omitted:
+            flashes_since_change.iloc[idx] = flashes_since_change.iloc[idx - 1]
+        else:
+            if row["is_change"] or idx == 0:
+                flashes_since_change.iloc[idx] = 0
+            else:
+                flashes_since_change.iloc[idx] = (
+                    flashes_since_change.iloc[idx - 1] + 1
+                )
+    return flashes_since_change
+
+
+def add_active_flag(
+    stim_pres_table: pd.DataFrame, trials: pd.DataFrame
+) -> pd.DataFrame:
+    """Mark the active stimuli by lining up the stimulus times with the
+    trials times.
+
+    Parameters
+    ----------
+    stim_pres_table : pandas.DataFrame
+        Stimulus table to add active column to.
+    trials : pandas.DataFrame
+        Trials table to align with the stimulus table.
+
+    Returns
+    -------
+    stimulus_table : pandas.DataFrame
+        Copy of ``stim_pres_table`` with added acive column.
+    """
+    if "active" in stim_pres_table.columns:
+        return stim_pres_table
+    else:
+        active = pd.Series(
+            data=np.zeros(len(stim_pres_table), dtype=bool),
+            index=stim_pres_table.index,
+            name="active",
+        )
+        stim_mask = (
+            (stim_pres_table.start_time > trials.start_time.min())
+            & (stim_pres_table.start_time < trials.stop_time.max())
+            & (~stim_pres_table.image_name.isna())
+        )
+        active[stim_mask] = True
+
+        # Clean up potential stimuli that fall outside in time of the trials
+        # but are part of the "active" stimulus block.
+        if "stimulus_block" in stim_pres_table.columns:
+            for stim_block in stim_pres_table["stimulus_block"].unique():
+                block_mask = stim_pres_table["stimulus_block"] == stim_block
+                if np.any(active[block_mask]):
+                    active[block_mask] = True
+        stim_pres_table["active"] = active
+        return stim_pres_table
+
+
+def compute_trials_id_for_stimulus(
+    stim_pres_table: pd.DataFrame, trials_table: pd.DataFrame
+) -> pd.Series:
+    """Add an id to allow for merging of the stimulus presentations
+    table with the trials table.
+
+    If stimulus_block is not available as a column in the input table, return
+    an empty set of trials_ids.
+
+    Parameters
+    ----------
+    stim_pres_table : pandas.DataFrame
+        Pandas stimulus table to create trials_id from.
+    trials_table : pandas.DataFrame
+        Trials table to create id from using trial start times.
+
+    Returns
+    -------
+    trials_ids : pd.Series
+        Unique id to allow merging of the stim table with the trials table.
+        Null values are represented by -1.
+
+    Note
+    ----
+    ``trials_id`` values are copied from active stimulus blocks into
+    passive stimulus/replay blocks that contain the same image ordering and
+    length.
+    """
+    # Create a placeholder for the trials_id.
+    trials_ids = pd.Series(
+        data=np.full(len(stim_pres_table), INT_NULL, dtype=int),
+        index=stim_pres_table.index,
+        name="trials_id",
+    ).astype("int")
+
+    # Find stimulus blocks that start within a trial. Copy the trial_id
+    # into our new trials_ids series. For some sessions there are gaps in
+    # between one trial's end and the next's stop time so we account for this
+    # by only using the max time for all trials as the limit.
+    max_trials_stop = trials_table.stop_time.max()
+    for idx, trial in trials_table.iterrows():
+        stim_mask = (
+            (stim_pres_table.start_time > trial.start_time)
+            & (stim_pres_table.start_time < max_trials_stop)
+            & (~stim_pres_table.image_name.isna())
+        )
+        trials_ids[stim_mask] = idx
+
+    # Return input frame if the stimulus_block or active is not available.
+    if (
+        "stimulus_block" not in stim_pres_table.columns
+        or "active" not in stim_pres_table.columns
+    ):
+        return trials_ids
+    active_sorted = stim_pres_table.active
+
+    # The code below finds all stimulus blocks that contain images/trials
+    # and attempts to detect blocks that are identical to copy the associated
+    # trials_ids into those blocks. In the parlance of the data this is
+    # copying the active stimulus block data into the passive stimulus block.
+
+    # Get the block ids for the behavior trial presentations
+    stim_blocks = stim_pres_table.stimulus_block
+    stim_image_names = stim_pres_table.image_name
+    active_stim_blocks = stim_blocks[active_sorted].unique()
+    # Find passive blocks that show images for potential copying of the active
+    # into a passive stimulus block.
+    passive_stim_blocks = stim_blocks[
+        np.logical_and(~active_sorted, ~stim_image_names.isna())
+    ].unique()
+
+    # Copy the trials_id into the passive block if it exists.
+    if len(passive_stim_blocks) > 0:
+        for active_stim_block in active_stim_blocks:
+            active_block_mask = stim_blocks == active_stim_block
+            active_images = stim_image_names[active_block_mask].values
+            for passive_stim_block in passive_stim_blocks:
+                passive_block_mask = stim_blocks == passive_stim_block
+                if np.array_equal(
+                    active_images, stim_image_names[passive_block_mask].values
+                ):
+                    trials_ids.loc[passive_block_mask] = trials_ids[
+                        active_block_mask
+                    ].values
+
+    return trials_ids.sort_index()
+
+
+def fix_omitted_end_frame(stim_pres_table: pd.DataFrame) -> pd.DataFrame:
+    """Fill NaN ``end_frame`` values for omitted frames.
+
+    Additionally, change type of ``end_frame`` to int.
+
+    Parameters
+    ----------
+    stim_pres_table : `pandas.DataFrame`
+        Input stimulus table to fix/fill omitted ``end_frame`` values.
+
+    Returns
+    -------
+    output : `pandas.DataFrame`
+        Copy of input DataFrame with filled omitted, ``end_frame`` values and
+        fixed typing.
+    """
+    median_stim_frame_duration = np.nanmedian(
+        stim_pres_table["end_frame"] - stim_pres_table["start_frame"]
+    )
+    omitted_end_frames = (
+        stim_pres_table[stim_pres_table["omitted"]]["start_frame"]
+        + median_stim_frame_duration
+    )
+    stim_pres_table.loc[
+        stim_pres_table["omitted"], "end_frame"
+    ] = omitted_end_frames
+
+    stim_dtypes = stim_pres_table.dtypes.to_dict()
+    stim_dtypes["start_frame"] = int
+    stim_dtypes["end_frame"] = int
+
+    return stim_pres_table.astype(stim_dtypes)
+
+
+def produce_stimulus_block_names(
+    stim_df: pd.DataFrame, session_type: str, project_code: str
+) -> pd.DataFrame:
+    """Add a column stimulus_block_name to explicitly reference the kind
+    of stimulus block in addition to the numbered blocks.
+
+    Only implemented currently for the VBO dataset. Will not add the column
+    if it is not in the defined set of project codes.
+
+    Parameters
+    ----------
+    stim_df : pandas.DataFrame
+        Input stimulus presentations DataFrame with stimulus_block column
+    session_type : str
+        Full type name of session.
+    project_code : str
+        Full name of the project this session belongs to. As this function
+        is currently only written for VBO, if a non-VBO project name is
+        presented, the function will result in a noop.
+
+    Returns
+    -------
+    modified_df : pandas.DataFrame
+        Stimulus presentations DataFrame with added stimulus_block_name
+        column if the session is from a project that makes up the VBO release.
+        The data frame is return the same as the input if not.
+    """
+    if project_code not in PROJECT_CODES:
+        return stim_df
+
+    vbo_map = VBO_PASSIVE_MAP if "passive" in session_type else VBO_ACTIVE_MAP
+
+    for stim_block in stim_df.stimulus_block.unique():
+        # If we have a single block then this is a training session and we
+        # add +1 to the block number to reuse the general VBO map and get the
+        # correct task.
+        block_id = stim_block
+        if len(stim_df.stimulus_block.unique()) == 1:
+            block_id += 1
+        stim_df.loc[
+            stim_df["stimulus_block"] == stim_block, "stimulus_block_name"
+        ] = vbo_map[block_id]
+
+    return stim_df
+
+
+def compute_is_sham_change(
+    stim_df: pd.DataFrame, trials: pd.DataFrame
+) -> pd.DataFrame:
+    """Add is_sham_change to stimulus presentation table.
+
+    Parameters
+    ----------
+    stim_df : pandas.DataFrame
+        Stimulus presentations table to add is_sham_change to.
+    trials : pandas.DataFrame
+        Trials data frame to pull info from to create
+
+    Returns
+    -------
+    stimulus_presentations : pandas.DataFrame
+        Input ``stim_df`` DataFrame with the is_sham_change column added.
+    """
+    if (
+        "trials_id" not in stim_df.columns
+        or "active" not in stim_df.columns
+        or "stimulus_block" not in stim_df.columns
+    ):
+        return stim_df
+    stim_trials = stim_df.merge(
+        trials, left_on="trials_id", right_index=True, how="left"
+    )
+    catch_frames = stim_trials[stim_trials["catch"].fillna(False)][
+        "change_frame"
+    ].unique()
+
+    stim_df["is_sham_change"] = False
+    catch_flashes = stim_df[
+        stim_df["start_frame"].isin(catch_frames)
+    ].index.values
+    stim_df.loc[catch_flashes, "is_sham_change"] = True
+
+    stim_blocks = stim_df.stimulus_block
+    stim_image_names = stim_df.image_name
+    active_stim_blocks = stim_blocks[stim_df.active].unique()
+    # Find passive blocks that show images for potential copying of the active
+    # into a passive stimulus block.
+    passive_stim_blocks = stim_blocks[
+        np.logical_and(~stim_df.active, ~stim_image_names.isna())
+    ].unique()
+
+    # Copy the trials_id into the passive block if it exists.
+    if len(passive_stim_blocks) > 0:
+        for active_stim_block in active_stim_blocks:
+            active_block_mask = stim_blocks == active_stim_block
+            active_images = stim_image_names[active_block_mask].values
+            for passive_stim_block in passive_stim_blocks:
+                passive_block_mask = stim_blocks == passive_stim_block
+                if np.array_equal(
+                    active_images, stim_image_names[passive_block_mask].values
+                ):
+                    stim_df.loc[
+                        passive_block_mask, "is_sham_change"
+                    ] = stim_df[active_block_mask]["is_sham_change"].values
+
+    return stim_df.sort_index()
+
