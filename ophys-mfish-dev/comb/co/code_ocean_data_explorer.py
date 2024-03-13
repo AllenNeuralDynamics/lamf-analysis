@@ -75,11 +75,11 @@ class CodeOceanDataExplorer(object):
     def _get_data_assets_by_type(self, asset_type):
         assert asset_type in ["all", "raw", "derived"], "asset_type must be one of 'all', 'raw', or 'derived'"
         if asset_type == "all":
-            data_assets_list = self.get_all_multiplane_data_assets()
+            data_assets_list = self._get_all_multiplane_data_assets()
         elif asset_type == "raw":
-            data_assets_list = self.get_raw_multiplane_data_assets()
+            data_assets_list = self._get_raw_multiplane_data_assets()
         elif asset_type == "derived":
-            data_assets_list = self.get_derived_multiplane_data_assets()
+            data_assets_list = self._get_derived_multiplane_data_assets()
 
         return data_assets_list
 
