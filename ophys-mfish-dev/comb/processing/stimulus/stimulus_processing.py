@@ -282,7 +282,16 @@ def adjust_image_set_path_for_co(image_set_filename):
 
     """
     image_path_stem = Path(image_set_filename).stem
-    co_path = Path("/ophys-mfish-dev/ophys-mfish-dev/comb/image_dictionaries")
+    #co_path = Path("/ophys-mfish-dev/ophys-mfish-dev/comb/image_dictionaries")
+    co_path = Path("/root/capsule/data/stimuli")
+    # if not exists
+    if not co_path.exists():
+        # stop and raise error
+        raise FileNotFoundError(f"Path to image set does not exist, need to attach asset: {co_path}")
+        # stimuli_id = "a5827c34-40c5-42e9-b313-177375808914"
+        # stimuli_name = "vb_image_dictionaries"
+        # data = {'name': stimuli_name, 'id':stimuli_id}
+        # loader.attach(data)
     # add pkl to the end of the path
     image_path = co_path / f"{image_path_stem}.pkl"
 

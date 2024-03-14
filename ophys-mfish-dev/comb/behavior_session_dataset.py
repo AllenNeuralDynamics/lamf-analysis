@@ -7,6 +7,9 @@ from comb.processing.biometrics.licks import Licks
 
 from comb.data_files.behavior_stimulus_file import BehaviorStimulusFile
 
+from comb.processing.timestamps.stimulus_timestamps import StimulusTimestamps
+from comb.processing.stimulus.presentations import Presentations
+
 from . import data_file_keys
 
 from typing import Any, Optional
@@ -51,12 +54,14 @@ class BehaviorSessionDataset(BehaviorSessionGrabber):
     def __init__(self, 
                  raw_folder_path: Optional[str] = None, # where sync file is (pkl file)
                  oeid: Optional[str] = None,
-                 data_path: Optional[str] = None):
+                 data_path: Optional[str] = None,
+                 monitor_delay: float = 0.0):
         super().__init__(raw_folder_path=raw_folder_path,
                          oeid=oeid,
                          data_path=data_path)
 
         self._load_behavior_stimulus_file()
+        self.monitor_delay = monitor_delay # TODO: UPDATE
 
     def _load_behavior_stimulus_file(self):
         # load file when BehaviorDataset is instantiated
@@ -71,12 +76,25 @@ class BehaviorSessionDataset(BehaviorSessionGrabber):
 
         return self._stimulus_timestamps
 
-    def get_stimulus_presentations(self):
-        pkl_file_path = self.file_paths['stimulus_pkl']
-        pkl_data = pd.read_pickle(pkl_file_path)
+    # def get_stimulus_presentations_old(self):
+    #     """"This is an old method; skips Presentations class, which has more updated processing"""
+    #     pkl_file_path = self.file_paths['stimulus_pkl']
+    #     pkl_data = pd.read_pickle(pkl_file_path)
 
-        self._stimulus_presentations = stimulus_processing.get_stimulus_presentations(
-            pkl_data, self.stimulus_timestamps)
+    #     self._stimulus_presentations = stimulus_processing.get_stimulus_presentations(
+    #         pkl_data, self.stimulus_timestamps)
+
+    #     return self._stimulus_presentations
+
+    def get_stimulus_presentations(self):
+        """"yo"""
+        ts = StimulusTimestamps.from_stimulus_file(self.behavior_stimulus_file, 
+                                                   monitor_delay=self.monitor_delay)
+        st = Presentations.from_stimulus_file(stimulus_file=self.behavior_stimulus_file,
+                                              stimulus_timestamps=ts,
+                                              behavior_session_id='DUMMY ID') # TODO: GET BEHAVIOR SESSION ID
+
+        self._stimulus_presentations = st.value # TODO: probably smoother way to return than call value
 
         return self._stimulus_presentations
 

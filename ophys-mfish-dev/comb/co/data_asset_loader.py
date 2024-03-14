@@ -97,14 +97,15 @@ class DataAssetLoader(CodeOceanDataExplorer):
         # determine if asset is raw or processed, look for opposite 
         derived = True if "processed" in name else False
         if derived:
-            df = pd.DataFrame(self.get_raw_multiplane_data_assets())
+            df = pd.DataFrame(self.raw_assets)
         else:
-            df = pd.DataFrame(self.get_derived_multiplane_data_assets())
+            df = pd.DataFrame(self.derived_assets)
 
         # use basename to match across linked assets
         df["basename"] = df["name"].apply(self._data_asset_base_name)
         linked_name = df[df["basename"] == self._data_asset_base_name(name)]["name"].values[0]
         linked_id = df[df["basename"] == self._data_asset_base_name(name)]["id"].values[0]
+        print(linked_name, linked_id)
 
         if linked_name is None:
             print(f"LINKED ASSET NOT FOUND: {name}")

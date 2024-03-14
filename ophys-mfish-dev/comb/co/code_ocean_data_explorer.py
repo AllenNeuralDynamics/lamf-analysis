@@ -11,15 +11,19 @@ from aind_codeocean_api.codeocean import CodeOceanClient, CodeOceanCredentials
 class CodeOceanDataExplorer(object):
     """Class to find data assets in code ocean for visual behavior like ophys and behavior data."""
     def __init__(self,
-                 ophys_plane_id: Optional[str] = None,
-                 behavior_session_id: Optional[str] = None):
-
-        self.ophys_plane_id = ophys_plane_id
-        self.behavior_session_id = behavior_session_id
+                 query: Optional[str] = "multiplane",
+                 verbose: Optional[bool] = True):
 
         self.client = self._get_client()
+        self.query = query
+        self.all_data_assets = self._all_data_assets()
+        self.verbose = verbose
 
-        self.all_data_assets = self._get_all_multiplane_data_assets()
+        if self.verbose:
+            print("CodeOceanDataExplorer initialized\n---------------------------------")
+            print(f"Query: {query}")
+            print(f"Number of assets: {len(self.all_data_assets)}")
+        
 
     
     def _get_client(self):
@@ -38,18 +42,16 @@ class CodeOceanDataExplorer(object):
         domain = self._get_env_var("CODEOCEAN_DOMAIN")
         return token, domain
 
-    def _get_all_multiplane_data_assets(self):
-
-        query = "multiplane"
+    def _all_data_assets(self):
         client = self.client
 
-        response = client.search_all_data_assets(query=query)
+        response = client.search_all_data_assets(query=self.query)
         mp = response.json()
         results = mp['results']
 
         return results
 
-    def _filtered_by_tags(self, results, tag, return_no_tag = False):
+    def _filtered_by_tag(self, results, tag, return_no_tag = False):
         filtered_assets=[]
         no_tags_assets = []
         for r in results:
@@ -63,23 +65,24 @@ class CodeOceanDataExplorer(object):
             return filtered_assets, no_tags_assets
         else:
             return filtered_assets
-
-    def get_derived_multiplane_data_assets(self):
-        derived = self._filtered_by_tags(self.all_data_assets, 'derived')
+    @property
+    def derived_assets(self):
+        derived = self._filtered_by_tag(self.all_data_assets, 'derived')
         return derived
 
-    def get_raw_multiplane_data_assets(self):
-        raw = self._filtered_by_tags(self.all_data_assets, 'raw')
+    @property
+    def raw_assets(self):
+        raw = self._filtered_by_tag(self.all_data_assets, 'raw')
         return raw
 
     def _get_data_assets_by_type(self, asset_type):
         assert asset_type in ["all", "raw", "derived"], "asset_type must be one of 'all', 'raw', or 'derived'"
         if asset_type == "all":
-            data_assets_list = self._get_all_multiplane_data_assets()
+            data_assets_list = self._all_data_assets()
         elif asset_type == "raw":
-            data_assets_list = self._get_raw_multiplane_data_assets()
+            data_assets_list = self.raw_assets
         elif asset_type == "derived":
-            data_assets_list = self._get_derived_multiplane_data_assets()
+            data_assets_list = self.derived_assets
 
         return data_assets_list
 
@@ -100,6 +103,6 @@ class CodeOceanDataExplorer(object):
         """
         data_assets_list = self._get_data_assets_by_type(asset_type)
 
-        mouse_id_assets = self._filtered_by_tags(data_assets_list, mouse_id)
+        mouse_id_assets = self._filtered_by_tag(data_assets_list, mouse_id)
         return mouse_id_assets
 
