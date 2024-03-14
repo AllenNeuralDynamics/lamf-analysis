@@ -5,7 +5,7 @@ with open('requirements.txt') as f:
 
 setup(
     name='ophys-mfish-dev',
-    version='0.1.3',
+    version='0.1.4',
     url='https://github.com/AllenNeuralDynamics/ophys-mfish-dev',
     author='Matthew J. Davis',
     author_email='mattjdavis@gmail.com',

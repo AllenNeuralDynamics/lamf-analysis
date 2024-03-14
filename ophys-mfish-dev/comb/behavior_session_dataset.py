@@ -9,6 +9,7 @@ from comb.data_files.behavior_stimulus_file import BehaviorStimulusFile
 
 from comb.processing.timestamps.stimulus_timestamps import StimulusTimestamps
 from comb.processing.stimulus.presentations import Presentations
+from comb.processing.biometrics.rewards import Rewards
 
 from . import data_file_keys
 
@@ -136,10 +137,15 @@ class BehaviorSessionDataset(BehaviorSessionGrabber):
     licks = LazyLoadable('_licks', get_licks)
 
 
-    # def get_rewards(self):
-    #     self._rewards = 
-    #     return self._rewards
-    # rewards = LazyLoadable('_rewards', get_rewards)
+    def get_rewards(self):
+        st = StimulusTimestamps.from_stimulus_file(self.behavior_stimulus_file, 
+                                                   monitor_delay=self.monitor_delay)
+
+        self._rewards = Rewards.from_stimulus_file(
+                stimulus_file=self.behavior_stimulus_file,
+                stimulus_timestamps=st.subtract_monitor_delay()).value # TODO: value?
+        return self._rewards
+    rewards = LazyLoadable('_rewards', get_rewards)
 
 
     # def get_task_parameters(self):
