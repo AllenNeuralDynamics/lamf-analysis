@@ -5,7 +5,15 @@ from datetime import datetime as dt
 from datetime import timezone as tz
 import json
 
-def main():
+# args
+import argparse
+
+parser = argparse.ArgumentParser(description="Run a capsule in Code Ocean")
+parser.add_argument("--capsule_id", type=str, help="The capsule id to run")
+parser.add_argument("--data_assets", type=str, nargs="+", help="The data assets to use")
+
+
+def main(capsule_id, data_assets):
     co_cred = CodeOceanCredentials()
     print(co_cred)
 
@@ -27,9 +35,9 @@ def main():
     for identifier, data_asset_id in datasets_ids.items():
         print(f"Running dataset {identifier}")
 
-
+        
         data_assets = [
-            {"id": data_asset_id, "mount": "multiplane-ophys_692478_2023-09-27_10-23-30"},
+            {"id": data_asset_id, "mount": "input"},
         ]
 
         run_response = co_client.run_capsule(
@@ -54,5 +62,13 @@ def main():
 
 if __name__ == "__main__":
     args = parser.parse_args()
+    # capsule_id = args.capsule_id
+    # data_assets = args.data_assets
+    cap
+
+    print(data_assets)
+    print(f"Running capsule {capsule_id} with data assets {data_assets}")
+
+    
 
     main()

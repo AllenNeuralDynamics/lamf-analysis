@@ -1,0 +1,23 @@
+[
+    {
+        "created": 1710536798,
+        "data_assets": [
+            {
+                "id": "05529cfc-23fe-4ead-9490-71763e9f7c01",
+                "mount": "universal_eye_tracking-peterl-2019-07-10"
+            },
+            {
+                "id": "cb9536be-0b18-44c7-bceb-404322d2093c",
+                "mount": "multiplane-ophys_717487_2024-02-13_10-10-33"
+            }
+        ],
+        "has_results": false,
+        "id": "ea8e6ff5-0c2f-458a-bc0d-b3bb4339bf49",
+        "name": "Run 536798",
+        "run_time": 2,
+        "state": "initializing",
+        "asset_name_processed": "multiplane-ophys_717487_2024-02-13_10-10-33_processed_2024-03-15_21-06-40",
+        "asset_id": "cb9536be-0b18-44c7-bceb-404322d2093c",
+        "asset_name": "multiplane-ophys_717487_2024-02-13_10-10-33"
+    }
+]

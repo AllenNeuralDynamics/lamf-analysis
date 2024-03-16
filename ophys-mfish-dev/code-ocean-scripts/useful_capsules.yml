@@ -1,0 +1,6 @@
+# Capsule contains "standard" DLC model for eye/pupile tracking
+# imported from LIMS and adapted for CO by former Mindscope NP team
+- name: aind-capsule-eye-tracking
+  capsule_id: 4cf0be83-2245-4bb1-a55c-a78201b14bfe
+  processed_tags: [ "derived", "dlc-eye" ]
+
