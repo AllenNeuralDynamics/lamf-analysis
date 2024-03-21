@@ -1,3 +1,21 @@
+"""
+Use this script to register data assets in Code Ocean. The idea is to use a run_response json that we generate from "run_capsule_*.py" scripts to
+get the computation ids of interest and register the results. We resave the run_response json indicated the data assets is regisetered.
+
+
+The processed name needs to altered depending on the data type:
++ processed
++ dlc-eye
++ dlc-face
++ dlc-body
+
+Tags for data types:
++ processed:
++ dlc-eye: ["derived", "multiplane-ophys","dlc-eye"]
+
+"""
+
+
 from aind_codeocean_api.codeocean import CodeOceanClient
 from aind_codeocean_api.credentials import CodeOceanCredentials
 from aind_codeocean_api.models.data_assets_requests import CreateDataAssetRequest
@@ -57,9 +75,6 @@ if __name__ == "__main__":
     with open(run_json, "r") as f:
         run_json = json.load(f)
 
-    
-    processed_name = run_json['asset_name_processed'].replace('processed','dlc-eye')
-    run_id = run_json['id']
 
     tags = ["derived", "multiplane-ophys","dlc-eye"]
     main(run_json,tags = tags)
