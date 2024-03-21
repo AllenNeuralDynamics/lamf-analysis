@@ -1,4 +1,4 @@
-"""
+""" NOTE: not finished (3/21/2024)
 Use this script to register data assets in Code Ocean. The idea is to use a run_response json that we generate from "run_capsule_*.py" scripts to
 get the computation ids of interest and register the results. We resave the run_response json indicated the data assets is regisetered.
 
