@@ -31,7 +31,7 @@ class DataAssetLoader(CodeOceanDataExplorer):
 
 
     def attach(self, 
-               data: Union[dict,list,Path]):
+               data: Union[dict,list, Path]):
         """Attach a data asset to the capsule and update DAL
 
 
@@ -93,9 +93,8 @@ class DataAssetLoader(CodeOceanDataExplorer):
 
             # TODO: could attach if not already attached
             return
-
-        # determine if asset is raw or processed, look for opposite 
-        derived = True if "processed" in name else False
+        # Could also look at tags
+        derived = True if len(name.split("_")) > 3 else False
         if derived:
             df = pd.DataFrame(self.raw_assets)
         else:
@@ -167,7 +166,11 @@ class DataAssetLoader(CodeOceanDataExplorer):
             self.assets[asset]["linked_attached"] = self._check_for_linked_in_dict(asset,check_dict)
     
     def _data_asset_base_name(self, name):
-        return name.split("_")[0] + "_" +  name.split("_")[1] + "_" + name.split("_")[2]
+        try:
+            base_name = name.split("_")[0] + "_" +  name.split("_")[1] + "_" + name.split("_")[2]
+        except IndexError:
+            base_name = name
+        return 
 
     def _check_if_attached(self, name):
         for asset in self.assets:
@@ -209,6 +212,8 @@ class DataAssetLoader(CodeOceanDataExplorer):
             # asset type derived if name contains "processed", raw otherwise
             if "processed" in name:
                 data_assets_dict[name]["type"] = "processed"
+            if "dlc-eye" in name:
+                data_assets_dict[name]["type"] = "dlc-eye"
             else:
                 data_assets_dict[name]["type"] = "raw"
 
