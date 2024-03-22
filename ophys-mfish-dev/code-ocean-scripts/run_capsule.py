@@ -89,9 +89,11 @@ def run_capsule(capsule_id, data_asset_ids, dry_run=False):
         run_response["asset_name"] = da_name
         data.append(run_response)
         time.sleep(30)
-    timestamp = dt.now().strftime("%Y%m%dT%H%M%S")
-    with open(f"run_results_{timestamp}.json", "w") as fp:
-        json.dump(data, fp, indent=4)
+
+    if not dry_run:
+        timestamp = dt.now().strftime("%Y%m%dT%H%M%S")
+        with open(f"./run_jsons/run_results_{timestamp}.json", "w") as fp:
+            json.dump(data, fp, indent=4)
 
 if __name__ == "__main__":
     args = parser.parse_args()
