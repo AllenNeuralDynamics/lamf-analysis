@@ -86,7 +86,7 @@ class CodeOceanDataExplorer(object):
 
         return data_assets_list
 
-    def mouse_id_data_assets(self, mouse_id, asset_type="all"):
+    def assets_by_mouse_id(self, mouse_id, asset_type="all"):
         """addd
 
         Parameters
@@ -105,4 +105,29 @@ class CodeOceanDataExplorer(object):
 
         mouse_id_assets = self._filtered_by_tag(data_assets_list, mouse_id)
         return mouse_id_assets
+
+    def assets_by_name(self, name, asset_type="all"):
+        """addd
+
+        Parameters
+        ----------
+        name : str
+            Name of data asset to filter.
+        asset_type : str, optional
+            Type of asset to filter. The default is "all".  Options are "all", "raw", "derived".
+
+        Returns
+        -------
+        list
+            List of data assets filtered by name.
+        """
+        data_assets_list = self._get_data_assets_by_type(asset_type)
+
+        # iterate over all data assets and find the ones that contain the string name in "name"
+        name_assets = []
+        for r in data_assets_list:
+            if name in r['name']:
+                name_assets.append(r)
+
+        return name_assets
 
