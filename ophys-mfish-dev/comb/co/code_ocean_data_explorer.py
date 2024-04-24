@@ -25,7 +25,6 @@ class CodeOceanDataExplorer(object):
             print(f"Number of assets: {len(self.all_data_assets)}")
         
 
-    
     def _get_client(self):
         token, domain = self._code_ocean_credentials()
         client = CodeOceanClient(domain=domain, token=token)
@@ -51,7 +50,17 @@ class CodeOceanDataExplorer(object):
 
         return results
 
-    def _filtered_by_tag(self, results, tag, return_no_tag = False):
+    @property
+    def derived_assets(self):
+        derived = self.filter_by_tag(self.all_data_assets, 'derived')
+        return derived
+
+    @property
+    def raw_assets(self):
+        raw = self.filter_by_tag(self.all_data_assets, 'raw')
+        return raw
+
+    def filter_by_tag(self, results, tag, return_no_tag = False):
         filtered_assets=[]
         no_tags_assets = []
         for r in results:
@@ -65,15 +74,7 @@ class CodeOceanDataExplorer(object):
             return filtered_assets, no_tags_assets
         else:
             return filtered_assets
-    @property
-    def derived_assets(self):
-        derived = self._filtered_by_tag(self.all_data_assets, 'derived')
-        return derived
-
-    @property
-    def raw_assets(self):
-        raw = self._filtered_by_tag(self.all_data_assets, 'raw')
-        return raw
+    
 
     def _get_data_assets_by_type(self, asset_type):
         assert asset_type in ["all", "raw", "derived"], "asset_type must be one of 'all', 'raw', or 'derived'"
@@ -103,7 +104,7 @@ class CodeOceanDataExplorer(object):
         """
         data_assets_list = self._get_data_assets_by_type(asset_type)
 
-        mouse_id_assets = self._filtered_by_tag(data_assets_list, mouse_id)
+        mouse_id_assets = self.filter_by_tag(data_assets_list, mouse_id)
         return mouse_id_assets
 
     def assets_by_name(self, name, asset_type="all"):
@@ -130,4 +131,54 @@ class CodeOceanDataExplorer(object):
                 name_assets.append(r)
 
         return name_assets
+
+
+    def assets_by_base_name(self, basename, asset_type="all"):
+        """Grab assests by base_name (i.e. session name)
+
+        In AIND data assets are named with the following convention:
+        raw data: {platform}_{mouse_id}_{date}_{time}
+        derived data: {platform}_{mouse_id}_{date}_{time}_{derived_data_type}_{date}_{time}
+        Therefore, base_name the first 4 elements of the name split by "_"
+
+        Parameters
+        ----------
+        basename : str
+            Basename of data asset to filter.
+        asset_type : str, optional
+            Type of asset to filter. The default is "all".  Options are "all", "raw", "derived".
+
+        Returns
+        -------
+        list
+            List of data assets filtered by basename.
+        """
+        data_assets_list = self._get_data_assets_by_type(asset_type)
+
+        basename_assets = []
+        for r in data_assets_list:
+            name = "_".join(r['name'].split("_")[:4])
+            if basename == name:
+                basename_assets.append(r)
+        return basename_assets
+
+
+    def assets_by_session_name(self, session_name, asset_type="all"):
+        """Grab assests by session_name
+
+        See: assets_by_base_name()
+
+        Parameters
+        ----------
+        session_name : str
+            Session name of data asset to filter.
+        asset_type : str, optional
+            Type of asset to filter. The default is "all".  Options are "all", "raw", "derived".
+
+        Returns
+        -------
+        list
+            List of data assets filtered by session name.
+        """
+        return self.assets_by_base_name(session_name, asset_type)
 
