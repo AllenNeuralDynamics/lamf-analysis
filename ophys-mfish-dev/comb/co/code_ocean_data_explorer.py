@@ -11,7 +11,7 @@ from aind_codeocean_api.codeocean import CodeOceanClient, CodeOceanCredentials
 class CodeOceanDataExplorer(object):
     """Class to find data assets in code ocean for visual behavior like ophys and behavior data."""
     def __init__(self,
-                 query: Optional[str] = "multiplane",
+                 query: Optional[str] = None,
                  verbose: Optional[bool] = True):
 
         self.client = self._get_client()
@@ -181,4 +181,29 @@ class CodeOceanDataExplorer(object):
             List of data assets filtered by session name.
         """
         return self.assets_by_base_name(session_name, asset_type)
+
+
+    def assets_by_platform(self, platform, asset_type="all"):
+        """Grab assests by platform
+
+        Parameters
+        ----------
+        platform : str
+            Platform of data asset to filter.
+        asset_type : str, optional
+            Type of asset to filter. The default is "all".  Options are "all", "raw", "derived".
+
+        Returns
+        -------
+        list
+            List of data assets filtered by platform.
+        """
+        data_assets_list = self._get_data_assets_by_type(asset_type)
+
+        platform_assets = []
+        for r in data_assets_list:
+            name = r['name'].split("_")[0]
+            if platform == name:
+                platform_assets.append(r)
+        return platform_assets
 
