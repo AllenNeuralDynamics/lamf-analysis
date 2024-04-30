@@ -10,7 +10,7 @@ setup(
     author='Matthew J. Davis',
     author_email='mattjdavis@gmail.com',
     description='TODO',
-    package_dir={'': 'ophys-mfish-dev'},
-    packages=find_packages(where='ophys-mfish-dev'),
+    package_dir={'': 'src'},
+    packages=find_packages(where='src'),
     install_requires=requirements,
 )
