@@ -182,7 +182,7 @@ def register_cortical_stack(zstack_path: Union[Path, str],
 
     if stack_metadata is None:
         stack_metadata, _, _ = metadata_from_scanimage_tif(zstack_path)
-        
+
         # infer plane_order, see docstring
         if stack_metadata['num_volumes'] == 1:
             plane_order = 'step'
