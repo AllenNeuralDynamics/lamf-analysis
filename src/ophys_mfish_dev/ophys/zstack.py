@@ -193,13 +193,11 @@ def register_cortical_stack(zstack_path: Union[Path, str],
             n_planes = stack_metadata['num_slices']
             n_repeats_per_plane = stack_metadata['num_volumes']
         stack_metadata['plane_order'] = plane_order
-        num_channels = stack_metadata['num_channels']
     else:
         # in case dict provided
         plane_order = stack_metadata['plane_order']
         n_planes = stack_metadata['num_slices']
         n_repeats_per_plane = stack_metadata['num_volumes']
-        num_channels = stack_metadata['num_channels']
 
     print(f"Metadata parsed in {np.round(time.time() - new_time, 2)} s")
 
@@ -209,7 +207,7 @@ def register_cortical_stack(zstack_path: Union[Path, str],
                'window_size': 1, 'use_adapthisteq': True}
 
     # 3A. Single channel
-    if num_channels == 1:
+    if stack_metadata['num_channels'] == 1:
         ref_channel = 0  # always 0 for single channel
 
         reg_dict_ref = get_zstack_reg(stack, plane_order, n_planes,
@@ -219,12 +217,12 @@ def register_cortical_stack(zstack_path: Union[Path, str],
         reg_dicts.append(reg_dict_ref)
 
     # 3B. Two Channel
-    elif num_channels == 2:
-        target_channel = [i for i in range(num_channels) if i != ref_channel][0]
-        print(f"Found num_channels = {num_channels}, ref_channel = {ref_channel}")
+    elif stack_metadata['num_channels'] == 2:
+        target_channel = [i for i in range(stack_metadata['num_channels']) if i != ref_channel][0]
+        print(f"Found num_channels = {stack_metadata['num_channels']}, ref_channel = {ref_channel}")
 
         # reference
-        stack_ref, stack_target = deinterleave_channels(stack, num_channels,
+        stack_ref, stack_target = deinterleave_channels(stack, stack_metadata['num_channels'],
                                                         ref_channel, target_channel)
         reg_dict_ref = get_zstack_reg(stack_ref, plane_order, n_planes,
                                       n_repeats_per_plane, ref_channel,
