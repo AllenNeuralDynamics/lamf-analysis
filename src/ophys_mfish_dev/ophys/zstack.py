@@ -63,10 +63,10 @@ def get_zstack_reg_using_shifts(stack, plane_order, n_planes, n_repeats_per_plan
     print(pstring)
     new_time = time.time()
     plane_reg_stack, _ = register_within_plane_multi(stack,
-                                                  plane_order=plane_order,
-                                                  n_planes=n_planes,
-                                                  n_repeats_per_plane=n_repeats_per_plane,
-                                                  shifts=shifts_within)
+                                                     plane_order=plane_order,
+                                                     n_planes=n_planes,
+                                                     n_repeats_per_plane=n_repeats_per_plane,
+                                                     shifts=shifts_within)
     print(f"Frame repeats registered in {np.round(time.time() - new_time, 2)} s")
 
     print(f"Registering between planes for channel= {target_channel}...")
@@ -232,7 +232,7 @@ def register_cortical_stack(zstack_path: Union[Path, str],
         print(f"Found num_channels = {num_channels}, ref_channel = {ref_channel}")
 
         # reference
-        stack_ref, stack_target = deinterleave_channels(stack, num_channels, 
+        stack_ref, stack_target = deinterleave_channels(stack, num_channels,
                                                         ref_channel, target_channel)
         reg_dict_ref = get_zstack_reg(stack_ref, plane_order, n_planes,
                                       n_repeats_per_plane, ref_channel,
@@ -319,9 +319,6 @@ def register_cortical_stack(zstack_path: Union[Path, str],
     # return plane_reg_stack, full_reg_stack, output_dict
     return output_dict
 
-
-
-    
 
 def metadata_from_scanimage_tif(stack_path):
     """Extract metadata from ScanImage tiff stack
@@ -502,7 +499,9 @@ def im_blend(image, overlay, alpha):
     return blended
 
 
-def image_normalization(image, dtype:str='uint16', im_thresh=0):
+def image_normalization(image: np.ndarray,
+                        dtype: str = 'uint16',
+                        im_thresh: float = 0):
     """Normalize 2D image and convert to dtype
     Prevent saturation.
 
@@ -605,7 +604,7 @@ def get_cortical_stack_paths(specimen_folder):
     #     session_paths.append(Path(cs).parent)
     # session_paths = np.unique(session_paths)
 
-    return cz_paths   #, session_paths
+    return cz_paths
 
 
 def _extract_dict_from_si_string(string):
@@ -633,13 +632,14 @@ def _extract_dict_from_si_string(string):
 def _str_to_int_list(string):
     return [int(s) for s in string.strip('[]').split()]
 
+
 def _str_to_bool_list(string):
     return [bool(s) for s in string.strip('[]').split()]
 
 
 def save_registered_stack(reg_stack,
-                          zstack_path, 
-                          output_path, 
+                          zstack_path,
+                          output_path,
                           n_reg_steps=2):
     """Save registered stack as tiff stack
 
@@ -712,7 +712,7 @@ def load_reg_stack(zstack_path: Union[Path, str],
         #     img = imread(path, key=page)
         #     reg_stack.append(img)
         # reg_stack = np.array(reg_stack)
-    except FileNotFoundError as e:
+    except FileNotFoundError:
         reg_stack = None
         print(f"Could not find registered stack at: {path}")
     return reg_stack
@@ -941,10 +941,10 @@ def reg_between_planes(stack_imgs,
         reg_stack_imgs[i, :, :] = scipy.ndimage.shift(
             stack_imgs[i, :, :], shift)
         shift_all.append(shift)
-    if ref_ind > 0:        
+    if ref_ind > 0:
         for i in range(ref_ind - 1, -1, -1):
             temp_ref = np.mean(
-                temp_stack_imgs[i+1 : min(num_planes, i + window_size + 1), :, :], axis=0)
+                temp_stack_imgs[i + 1: min(num_planes, i + window_size + 1), :, :], axis=0)
             temp_mov = ref_stack_imgs[i, :, :]
             valid_y, valid_x = calculate_valid_pix(temp_ref, temp_mov)
 
@@ -962,35 +962,6 @@ def reg_between_planes(stack_imgs,
             shift_all.insert(0, shift)
     return reg_stack_imgs, shift_all
 
-# 
-# def avg_reg_plane(images, num_for_ref=None):
-#     """Get mean FOV of a plane after registration.
-#     Use phase correlation
-
-#     Parameters
-#     ----------
-#     images : np.ndarray (3D)
-#         frames from a plane
-#     num_for_ref : int, optional
-#         number of frames to pick for reference, by default None
-#         When None (or num < 1), then use mean image as reference.
-
-#     Returns
-#     -------
-#     np.ndarray (2D)
-#         mean FOV of a plane after registration.
-#     """
-#     if num_for_ref is None or num_for_ref < 1:
-#         ref_img = np.mean(images, axis=0)
-#     else:
-#         ref_img, _ = pick_initial_reference(images, num_for_ref)
-#     reg = np.zeros_like(images)
-#     for i in range(images.shape[0]):
-#         shift, _, _ = skimage.registration.phase_cross_correlation(
-#             ref_img, images[i, :, :], normalization=None)
-#         reg[i, :, :] = scipy.ndimage.shift(images[i, :, :], shift)
-#     return np.mean(reg, axis=0)
-
 
 def average_reg_plane(images: np.ndarray) -> Union[np.ndarray, list]:
     """Get mean FOV of a plane after registration.
@@ -1006,7 +977,8 @@ def average_reg_plane(images: np.ndarray) -> Union[np.ndarray, list]:
     np.ndarray (2D)
         mean FOV of a plane after registration.
     """
-    # ref_img = np.mean(images, axis=0)
+    # if num_for_ref is None or num_for_ref < 1:
+    #   ref_img = np.mean(images, axis=0)
     ref_img, _ = pick_initial_reference(images)
     reg = np.zeros_like(images)
     shift_all = []
@@ -1091,19 +1063,19 @@ def pick_initial_reference(frames: np.ndarray, num_for_ref: int = 20) -> np.ndar
         size [Ly x Lx], initial reference image
 
     """
-    nimg,Ly,Lx = frames.shape
-    frames = np.reshape(frames, (nimg,-1)).astype('float32')
+    nimg, Ly, Lx = frames.shape
+    frames = np.reshape(frames, (nimg, -1)).astype('float32')
     frames = frames - np.reshape(frames.mean(axis=1), (nimg, 1))
     cc = np.matmul(frames, frames.T)
     ndiag = np.sqrt(np.diag(cc))
     cc = cc / np.outer(ndiag, ndiag)
-    CCsort = -np.sort(-cc, axis = 1)
+    CCsort = -np.sort(-cc, axis=1)
     bestCC = np.mean(CCsort[:, 1:num_for_ref], axis=1)
     imax = np.argmax(bestCC)
     indsort = np.argsort(-cc[imax, :])
     selected_frame_inds = indsort[0:num_for_ref]
-    refImg = np.mean(frames[selected_frame_inds, :], axis = 0)
-    refImg = np.reshape(refImg, (Ly,Lx))
+    refImg = np.mean(frames[selected_frame_inds, :], axis=0)
+    refImg = np.reshape(refImg, (Ly, Lx))
     return refImg, selected_frame_inds
 
 
@@ -1119,7 +1091,7 @@ def plot_xz(stack: np.array,
             clahe: bool = True,
             ax: plt.Axes = None,
             colorbar: bool = False):
-    """Plot the projection of a stack in the XZ plane. Use agg_func to 
+    """Plot the projection of a stack in the XZ plane. Use agg_func to
         aggregate the Z dimension.
 
     Parameters
@@ -1294,8 +1266,8 @@ def fig_4_xy_projections(stack: np.ndarray,
     top right: top 5 planes
     bottom left: mid 5 planes
     bottom right: bottom 5 planes
-    
-    
+
+
     Parameters
     ----------
     stack : np.array
@@ -1332,41 +1304,41 @@ def fig_4_xy_projections(stack: np.ndarray,
 
 def fig_4_xz_projections(stack: np.ndarray,
                          zstack_path: Path):
-        """Figure with 4 subplots showing xz projections of stack
-        top left: all planes
-        top right: top 5 planes
-        bottom left: mid 5 planes
-        bottom right: bottom 5 planes
+    """Figure with 4 subplots showing xz projections of stack
+    top left: all planes
+    top right: top 5 planes
+    bottom left: mid 5 planes
+    bottom right: bottom 5 planes
 
 
-        Parameters
-        ----------
-        stack : np.array
-            3D stack of registered planes
-        zstack_path : Path
-            Path to original zstack tiff file
+    Parameters
+    ----------
+    stack : np.array
+        3D stack of registered planes
+    zstack_path : Path
+        Path to original zstack tiff file
 
-        Returns
-        -------
-        fig : plt.Figure
-        """
+    Returns
+    -------
+    fig : plt.Figure
+    """
 
-        n_planes = stack.shape[2]
-        mid = n_planes // 2
-        first_slice = (1, 20)
-        mid_slice = (mid - 10, mid + 10)
-        last_slice = (n_planes - 20, n_planes - 1)
-        sns.set_context('notebook')
+    n_planes = stack.shape[2]
+    mid = n_planes // 2
+    first_slice = (1, 20)
+    mid_slice = (mid - 10, mid + 10)
+    last_slice = (n_planes - 20, n_planes - 1)
+    sns.set_context('notebook')
 
-        fig, axs = plt.subplots(2, 2, figsize=(10, 10))
-        plot_xz(stack, y_slice=None, ax=axs[0, 0])
-        plot_xz(stack, y_slice=first_slice, ax=axs[0, 1])
-        plot_xz(stack, y_slice=mid_slice, ax=axs[1, 0])
-        plot_xz(stack, y_slice=last_slice, ax=axs[1, 1])
+    fig, axs = plt.subplots(2, 2, figsize=(10, 10))
+    plot_xz(stack, y_slice=None, ax=axs[0, 0])
+    plot_xz(stack, y_slice=first_slice, ax=axs[0, 1])
+    plot_xz(stack, y_slice=mid_slice, ax=axs[1, 0])
+    plot_xz(stack, y_slice=last_slice, ax=axs[1, 1])
 
-        plt.tight_layout()
+    plt.tight_layout()
 
-        return fig
+    return fig
 
 
 def fig_plane_intensity(stack: np.ndarray,
