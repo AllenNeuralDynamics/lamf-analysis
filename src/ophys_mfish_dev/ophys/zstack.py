@@ -193,6 +193,7 @@ def register_cortical_stack(zstack_path: Union[Path, str],
             n_planes = stack_metadata['num_slices']
             n_repeats_per_plane = stack_metadata['num_volumes']
         stack_metadata['plane_order'] = plane_order
+        num_channels = stack_metadata['num_channels']
     else:
         # in case dict provided
         plane_order = stack_metadata['plane_order']
