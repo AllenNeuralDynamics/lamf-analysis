@@ -1,25 +1,24 @@
-import numpy as np
-
-from tifffile import imread, imsave, TiffFile
+import glob
+import json
+import os
+import time
 from multiprocessing import Pool
 from pathlib import Path
-import seaborn as sns
-from tqdm import tqdm
-import os
-from typing import Union, Optional, Tuple
-import json
-from ScanImageTiffReader import ScanImageTiffReader
-import time
-import imageio
-from PIL import Image, ImageDraw, ImageFont
-import matplotlib.pyplot as plt
-import skimage.exposure
-import glob
-import h5py
-import scipy
-import cv2
-import skimage
+from typing import Optional, Tuple, Union
 
+import cv2
+import h5py
+import imageio
+import matplotlib.pyplot as plt
+import numpy as np
+import scipy
+import seaborn as sns
+import skimage
+import skimage.exposure
+from PIL import Image, ImageDraw, ImageFont
+from ScanImageTiffReader import ScanImageTiffReader
+from tifffile import TiffFile, imread, imsave
+from tqdm import tqdm
 
 ####################################################################################################
 # Cortical stack
