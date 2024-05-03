@@ -268,7 +268,7 @@ def register_cortical_stack(zstack_path: Union[Path, str],
 
     print(f"Total time to register cortical stack: {np.round(time.time() - start_time, 2)} s")
 
-    return plane_reg_stack, full_reg_stack, output_dict
+    # return plane_reg_stack, full_reg_stack, output_dict
 
 
 def metadata_from_scanimage_tif(stack_path):
