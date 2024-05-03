@@ -181,33 +181,24 @@ def register_cortical_stack(zstack_path: Union[Path, str],
     new_time = time.time()
 
     if stack_metadata is None:
-        si_metadata, roi_groups_dict = metadata_from_scanimage_tif(zstack_path)
-        num_slices = int(si_metadata['SI.hStackManager.actualNumSlices'])
-        num_volumes = int(si_metadata['SI.hStackManager.actualNumVolumes'])
-        frames_per_slice = int(si_metadata['SI.hStackManager.framesPerSlice'])
-        z_steps = _str_to_int_list(si_metadata['SI.hStackManager.zs'])
-        actuator = si_metadata['SI.hStackManager.stackActuator']
-        num_channels = sum(_str_to_bool_list(si_metadata['SI.hPmts.powersOn']))
-        z_step_size = int(si_metadata['SI.hStackManager.actualStackZStepSize'])
-
+        stack_metadata, _, _ = metadata_from_scanimage_tif(zstack_path)
+        
         # infer plane_order, see docstring
-        if num_volumes == 1:
+        if stack_metadata['num_volumes'] == 1:
             plane_order = 'step'
-            n_planes = num_slices
-            n_repeats_per_plane = frames_per_slice
-        elif num_volumes > 1:
+            n_planes = stack_metadata['num_slices']
+            n_repeats_per_plane = stack_metadata['frames_per_slice']
+        elif stack_metadata['num_volumes'] > 1:
             plane_order = 'loop'
-            n_planes = num_slices
-            n_repeats_per_plane = num_volumes
+            n_planes = stack_metadata['num_slices']
+            n_repeats_per_plane = stack_metadata['num_volumes']
+        stack_metadata['plane_order'] = plane_order
     else:
+        # in case dict provided
         plane_order = stack_metadata['plane_order']
         n_planes = stack_metadata['num_slices']
         n_repeats_per_plane = stack_metadata['num_volumes']
         num_channels = stack_metadata['num_channels']
-        frames_per_slice = stack_metadata['frames_per_slice']
-        z_step_size = stack_metadata['z_step_size']
-        z_steps = stack_metadata['z_steps']
-        actuator = stack_metadata['actuator']
 
     print(f"Metadata parsed in {np.round(time.time() - new_time, 2)} s")
 
@@ -251,15 +242,13 @@ def register_cortical_stack(zstack_path: Union[Path, str],
 
     # 5. gather processing json
     output_dict = {}
-    vars_to_add = ['n_planes', 'n_repeats_per_plane', 'z_step_size', 'plane_order',
-                   'frames_per_slice', 'z_steps', 'actuator', 'num_channels', 'ref_channel']
-    for var in vars_to_add:
-        output_dict[var] = locals()[var]
+    output_dict.update(stack_metadata)
     output_dict['input_path'] = str(zstack_path)
     output_dict['input_stack_shape'] = stack.shape
     output_dict['reg_ops_between'] = reg_ops
     output_dict['reg_method_within'] = "phase_cross_correlation"
     output_dict['reg_method_between'] = "phase_cross_correlation"
+    # channel specific info
     for i, d in enumerate(reg_dicts):
         ch = d['channel']
         output_dict[f'channel_{ch}'] = {'shifts_between': _list_array_to_list(d['shifts_between'])}
@@ -335,9 +324,11 @@ def metadata_from_scanimage_tif(stack_path):
     Returns
     -------
     dict
-        si_metadata
+        stack_metadata: important metadata extracted from scanimage tiff header
     dict
-        roi_groups_dict
+        si_metadata: all scanimge metadata. Each value still a string, so convert if needed.
+    dict
+        roi_groups_dict: 
     """
     with ScanImageTiffReader(str(stack_path)) as reader:
         md_string = reader.metadata()
@@ -352,7 +343,16 @@ def metadata_from_scanimage_tif(stack_path):
     # parse 2: json loads works hurray
     roi_groups_dict = json.loads(rg_str)
 
-    return si_metadata, roi_groups_dict
+    stack_metadata = {}
+    stack_metadata['num_slices'] = int(si_metadata['SI.hStackManager.actualNumSlices'])
+    stack_metadata['num_volumes'] = int(si_metadata['SI.hStackManager.actualNumVolumes'])
+    stack_metadata['frames_per_slice'] = int(si_metadata['SI.hStackManager.framesPerSlice'])
+    stack_metadata['z_steps'] = _str_to_int_list(si_metadata['SI.hStackManager.zs'])
+    stack_metadata['actuator'] = si_metadata['SI.hStackManager.stackActuator']
+    stack_metadata['num_channels'] = sum(_str_to_bool_list(si_metadata['SI.hPmts.powersOn']))
+    stack_metadata['z_step_size'] = int(si_metadata['SI.hStackManager.actualStackZStepSize'])
+
+    return stack_metadata, si_metadata, roi_groups_dict
 
 
 ####################################################################################################
