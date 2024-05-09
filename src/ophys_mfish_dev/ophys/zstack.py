@@ -205,6 +205,10 @@ def register_cortical_stack(zstack_path: Union[Path, str],
     reg_dicts = []  # Main list to store all results
     reg_ops = {'ref_ind': reference_plane, 'top_ring_buffer': 10,
                'window_size': 1, 'use_adapthisteq': True}
+    
+    
+    # num channels; not reliable from scanimage metadata, so just look at dims (05/2024)
+    stack_metadata['num_channels'] = 2 if len(stack.shape) == 4 else 1
 
     # 3A. Single channel
     if stack_metadata['num_channels'] == 1:
@@ -1153,7 +1157,7 @@ def plot_xz(stack: np.array,
     # color bar
     if colorbar:
         fig.colorbar(im, ax=ax, shrink=0.3)
-    title = f'XY {agg_func} proj - y={yslice_str} \n {title_info}'
+    title = f'XZ {agg_func} proj - y={yslice_str} \n {title_info}'
     ax.set_title(title)
 
     return fig
@@ -1330,10 +1334,10 @@ def fig_4_xz_projections(stack: np.ndarray,
     sns.set_context('notebook')
 
     fig, axs = plt.subplots(2, 2, figsize=(10, 10))
-    plot_xz(stack, y_slice=None, ax=axs[0, 0])
-    plot_xz(stack, y_slice=first_slice, ax=axs[0, 1])
-    plot_xz(stack, y_slice=mid_slice, ax=axs[1, 0])
-    plot_xz(stack, y_slice=last_slice, ax=axs[1, 1])
+    plot_xz(stack, y_slice=None, clahe=False, ax=axs[0, 0])
+    plot_xz(stack, y_slice=first_slice, clahe=False, ax=axs[0, 1])
+    plot_xz(stack, y_slice=mid_slice, clahe=False, ax=axs[1, 0])
+    plot_xz(stack, y_slice=last_slice, clahe=False, ax=axs[1, 1])
 
     plt.tight_layout()
 
