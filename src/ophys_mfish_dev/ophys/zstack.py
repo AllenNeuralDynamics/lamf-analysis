@@ -793,8 +793,10 @@ def save_gif_with_frame_text(reg_stack: np.ndarray,
         for i in range(reg_stack.shape[0]):
             img = Image.fromarray(norm_stack[i])
             draw = ImageDraw.Draw(img)
-            f = "/usr/share/fonts/truetype/open-sans/OpenSans-Regular.ttf"
-            draw.text((10, 10), f"plane: {i}", fill='yellow', font=ImageFont.truetype(f, 16))
+            # TODO: find fonts OS-agnostically
+            # f = "/usr/share/fonts/truetype/open-sans/OpenSans-Regular.ttf"
+            # draw.text((10, 10), f"plane: {i}", fill='yellow', font=ImageFont.truetype(f, 16))
+            draw.text((10, 10), f"plane: {i}", fill='yellow')
             frames.append(img)
     else:
         frames = norm_stack
