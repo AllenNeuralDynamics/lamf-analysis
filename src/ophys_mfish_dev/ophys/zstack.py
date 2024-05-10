@@ -204,7 +204,7 @@ def register_cortical_stack(zstack_path: Union[Path, str],
     # 3. Register Zstack
     reg_dicts = []  # Main list to store all results
     reg_ops = {'ref_ind': reference_plane, 'top_ring_buffer': 10,
-               'window_size': 1, 'use_adapthisteq': True}
+               'window_size': 5, 'use_adapthisteq': True}
     
     
     # num channels; not reliable from scanimage metadata, so just look at dims (05/2024)
