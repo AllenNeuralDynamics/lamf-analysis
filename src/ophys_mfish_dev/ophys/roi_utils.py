@@ -2,7 +2,6 @@ import tifffile as tif
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
-import brain_observatory_qc.data_access.from_lims as from_lims
 import matplotlib
 from skimage import measure
 from typing import Union, Tuple
