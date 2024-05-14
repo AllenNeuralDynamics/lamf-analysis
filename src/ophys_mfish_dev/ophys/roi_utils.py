@@ -148,14 +148,14 @@ def make_3d_mask_from_2d(mask_im):
 
 def get_moved_mask_3d(moving_mask_3d,
                       sr, # StackReg object
-                      thresholding: ['num_pix', 'pix_threshold']='num_pix',
+                      thresholding: Union['num_pix', 'pix_threshold']='num_pix',
                       pix_threshold=0.5):                 
     moved_mask_3d = np.zeros(moving_mask_3d.shape)
     for i in range(moving_mask_3d.shape[0]):
         temp_moving_im = moving_mask_3d[i, :, :]
         temp_moved_im = sr.transform(temp_moving_im)
         if thresholding == 'pix_threshold':
-            temp_moved_im_thresholded = temp_moved_im>threshold
+            temp_moved_im_thresholded = temp_moved_im > pix_threshold
         elif thresholding == 'num_pix':
             num_pix = len(np.where(temp_moving_im.flatten())[0])
             moved_inds = np.unravel_index(np.argsort(-temp_moved_im.flatten())[:num_pix], temp_moving_im.shape)
@@ -204,7 +204,7 @@ def plot_contours_overlap_two_masks(mask1: np.ndarray,
     -------
     plt.axes
     """
-    assert mask1.shape == mask2.shape, "masks must be same shape"
+    assert mask1.shape[-2:] == mask2.shape[-2:], "masks must be same shape in 2D"
     if len(mask1.shape)==2:
         mask1_3d = make_3d_mask_from_2d(mask1)
     if len(mask2.shape)==2:
