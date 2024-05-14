@@ -115,6 +115,67 @@ def roi_bounding_box(roi_mask, pad: int = None):
         h = h + pad * 2
     return x, y, w, h
 
+
+###################################################################################################
+# Working with ROI masks
+###################################################################################################
+
+def reorder_mask_im(mask_im):
+    ''' Reorder ROI IDs in the mask image to be consecutive starting from 1
+    mask_im: input mask. Must be 2 dimensional    
+    '''
+    assert len(mask_im.shape) == 2
+    num_rois = len(np.unique(mask_im))
+    if len(np.unique(mask_im)) - 1 != mask_im.max():
+        num_rois = len(np.unique(mask_im))
+        old_ids = np.setdiff1d(mask_im.unique(), 0)
+        new_mask_im = np.zeros(mask_im.shape)
+        for i, old_id in enumerate(old_ids):
+            id_pix = np.where(mask_im == old_id)
+            new_mask_im[id_pix[0], id_pix[1]] = i
+        return new_mask_im
+    else:
+        return mask_im
+
+def make_3d_mask_from_2d(mask_im):
+# make a 3d mask from 2d mask
+    mask_im = reorder_mask_im(mask_im)
+    mask_3d = np.zeros((mask_im.max(), *mask_im.shape))
+    for i in range(mask_im.max()):
+        pix = np.where(mask_im==(i+1))
+        mask_3d[i, pix[0], pix[1]] = 1
+    return mask_3d
+
+
+def get_moved_mask_3d(moving_mask_3d,
+                      sr, # StackReg object
+                      thresholding: ['num_pix', 'pix_threshold']='num_pix',
+                      pix_threshold=0.5):                 
+    moved_mask_3d = np.zeros(moving_mask_3d.shape)
+    for i in range(moving_mask_3d.shape[0]):
+        temp_moving_im = moving_mask_3d[i, :, :]
+        temp_moved_im = sr.transform(temp_moving_im)
+        if thresholding == 'pix_threshold':
+            temp_moved_im_thresholded = temp_moved_im>threshold
+        elif thresholding == 'num_pix':
+            num_pix = len(np.where(temp_moving_im.flatten())[0])
+            moved_inds = np.unravel_index(np.argsort(-temp_moved_im.flatten())[:num_pix], temp_moving_im.shape)
+            temp_moved_im_thresholded = np.zeros(temp_moved_im.shape)
+            temp_moved_im_thresholded[moved_inds] = 1
+        else:
+            raise ValueError('thresholding must be either "num_pix" or "pix_threshold".')
+        moved_mask_3d[i,:,:] = temp_moved_im_thresholded
+    return moved_mask_3d
+
+
+def get_2d_mask_from_3d(mask_3d):
+    # deal with the overlap?
+    # for now, assign higher index value
+    mask_2d = np.argmax(mask_3d, axis=0)
+
+    return mask_2d    
+
+
 ###################################################################################################
 # Plotting
 ###################################################################################################
@@ -145,12 +206,16 @@ def plot_contours_overlap_two_masks(mask1: np.ndarray,
     plt.axes
     """
     assert mask1.shape == mask2.shape, "masks must be same shape"
+    if len(mask1.shape)==2:
+        mask1_3d = make_3d_mask_from_2d(mask1)
+    if len(mask2.shape)==2:
+        mask2_3d = make_3d_mask_from_2d(mask2)
 
     if ax is None:
         fig, ax = plt.subplots(figsize=(7, 7))
 
     if colors is None:
-        colors = ['red', 'green']
+        colors = ['r', 'b']
 
     # background image
     if img is not None:
@@ -161,18 +226,14 @@ def plot_contours_overlap_two_masks(mask1: np.ndarray,
         bg = np.ones_like(mask1)
         ax.imshow(bg, cmap=plt.cm.gray, vmin=0, vmax=1)
 
-    # binarize masks, NOTE: adjacent rois will be merged
-    mask1 = mask1 > 0
-    mask2 = mask2 > 0
-
-    contours_labeled = measure.find_contours(mask1, 0.5)
-    contours_pred = measure.find_contours(mask2, 0.5)
-
-    for n, contour in enumerate(contours_labeled):
-        ax.plot(contour[:, 1], contour[:, 0], linewidth=1, color=colors[0])
-
-    for n, contour in enumerate(contours_pred):
-        ax.plot(contour[:, 1], contour[:, 0], linewidth=1, color=colors[1])
+    for i in range(mask1_3d.shape[0]):
+        contour = measure.find_contours(mask1_3d[i, :, :], 0.5)
+        ax.plot(contour[0][:, 1], contour[0][:, 0], linewidth=1, color=colors[0],
+                alpha=0.6)
+    for i in range(mask2_3d.shape[0]):
+        contour = measure.find_contours(mask2_3d[i, :, :], 0.5)
+        ax.plot(contour[0][:, 1], contour[0][:, 0], linewidth=1, color=colors[1],
+                alpha=0.6)
 
     ax.set_facecolor('white')
 
@@ -211,7 +272,7 @@ def plot_contours_overlap_two_masks(mask1: np.ndarray,
 
 def classify_single_pred_roi_by_iou(roi_mask_pred: np.ndarray,
                                     all_gt_masks: np.ndarray,
-                                    tp_thresh: float = .3) -> Tuple(float, int, str):
+                                    tp_thresh: float = .3):
     """Calculate iou of single mask with all other masks from a predicted set
 
     roi_mask_pred: np.array
