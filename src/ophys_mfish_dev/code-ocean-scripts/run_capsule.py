@@ -31,9 +31,10 @@ parser.add_argument("--dry_run", action="store_true", help="Dry run", required=F
 # parser.add_argument("--capsule_name", type=str, help="The name of the capsule", required=False)
 
 def example_define_inputs():
-    capsule_id = "4cf0be83-2245-4bb1-a55c-a78201b14bfe" # aind-capsule-eye-tracking
 
     # JK gcamp pilots 03/15/2024
+    capsule_id = "4cf0be83-2245-4bb1-a55c-a78201b14bfe" # aind-capsule-eye-tracking
+
     data_assets = ["bc4013de-f522-419b-8525-54fe1513b813",
                    "71191107-40aa-4060-8375-d685a0d5c207",
                    "c65a4625-8b3b-4d3a-b300-a6f659cbcc3b",
@@ -47,6 +48,15 @@ def example_define_inputs():
 
 
     return capsule_id, data_assets
+
+
+def multiplane_ophys_pipeline_v3():
+    capsule_id = "543b69f3-cf29-47b7-8fda-c1482557e814"
+
+    data_assets = ["082a3420-5cdf-45ea-8cc7-51ae3a111186"]
+
+    return capsule_id, data_assets
+
 
 
 def run_capsule(capsule_id, data_asset_ids, dry_run=False):
@@ -102,7 +112,8 @@ if __name__ == "__main__":
     dry_run = args.dry_run
 
     if capsule_id is None or data_assets is None:
-        capsule_id, data_assets = example_define_inputs()
+        #capsule_id, data_assets = example_define_inputs()
+        capsule_id, data_assets = multiplane_ophys_pipeline_v3()
 
     print(f"Running capsule {capsule_id} with data assets {data_assets}")
     run_capsule(capsule_id, data_assets, dry_run)
