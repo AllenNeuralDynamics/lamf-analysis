@@ -190,9 +190,9 @@ def plot_contours_overlap_two_masks(mask1: np.ndarray,
     Parameters
     ----------
     mask1 : np.ndarray
-        mask 1
+        mask 1, can be 2D or 3D. If 3D, axis=0 means cell ind (2D shape by mask1.shape[-2:])
     mask2 : np.ndarray
-        mask 2
+        mask 2, same as in mask 1
     img : np.ndarray, optional
         background image
     colors : list, optional
@@ -204,12 +204,26 @@ def plot_contours_overlap_two_masks(mask1: np.ndarray,
     -------
     plt.axes
     """
-    assert mask1.shape[-2:] == mask2.shape[-2:], "masks must be same shape in 2D"
+    # assign mask shapes and ensure 3d shape and shape matching between the masks
+    if len(mask1.shape)==2:
+        mask1shape = mask1.shape
+        mask2shape = mask2.shape
+    elif len(mask1.shape)==3:
+        mask1shape = mask1.shape[1:]
+        mask2shape = mask2.shape[1:]
+    else:
+        raise ValueError('Mask should be 2D or 3D.')    
+    assert mask1shape == mask2shape, "masks must be same shape in 2D"
     if len(mask1.shape)==2:
         mask1_3d = make_3d_mask_from_2d(mask1)
+    else:
+        mask1_3d = mask1
     if len(mask2.shape)==2:
         mask2_3d = make_3d_mask_from_2d(mask2)
+    else:
+        mask2_3d = mask2
 
+    # Initialize figure
     if ax is None:
         fig, ax = plt.subplots(figsize=(7, 7))
 
@@ -218,13 +232,15 @@ def plot_contours_overlap_two_masks(mask1: np.ndarray,
 
     # background image
     if img is not None:
-        assert img.shape == mask1.shape
+        assert img.shape == mask1shape
         vmax = np.percentile(img, 99.6)
         ax.imshow(img, vmax=vmax, cmap=plt.cm.gray)
     else:
-        bg = np.ones_like(mask1)
+        print()
+        bg = np.ones(mask1shape)
         ax.imshow(bg, cmap=plt.cm.gray, vmin=0, vmax=1)
 
+    # Plot contours
     for i in range(mask1_3d.shape[0]):
         contour = measure.find_contours(mask1_3d[i, :, :], 0.5)
         ax.plot(contour[0][:, 1], contour[0][:, 0], linewidth=1, color=colors[0],
