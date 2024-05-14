@@ -205,7 +205,7 @@ def plot_contours_overlap_two_masks(mask1: np.ndarray,
     -------
     plt.axes
     """
-    assert mask1.shape == mask2.shape, "masks must be same shape"
+    assert mask1.shape[-2:] == mask2.shape[-2:], "masks must be same shape in 2D"
     if len(mask1.shape)==2:
         mask1_3d = make_3d_mask_from_2d(mask1)
     if len(mask2.shape)==2:
