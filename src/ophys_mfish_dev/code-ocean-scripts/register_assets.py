@@ -60,7 +60,7 @@ def register_assets(run_json_path, capsule_name):
     for run_dict in run_json:
         #da_name = co_client.get_data_asset(da_id).json()["name"]
 
-        processed_name = run_dict['asset_name_processed'].replace('processed','dlc-eye')
+        processed_name = run_dict['asset_name_processed'].replace('processed', 'dlc-eye')
         run_id = run_dict['id']
 
         register_request = CreateDataAssetRequest(
@@ -94,6 +94,7 @@ if __name__ == "__main__":
 
     # WARNING:
     capsule_name = "aind-capsule-eye-tracking"
+    capsule_name = "Multiplane Ophys Pipeline - with retries"
 
-    register_assets(run_json_path, "aind-capsule-eye-tracking")
+    register_assets(run_json_path, capsule_name)
 

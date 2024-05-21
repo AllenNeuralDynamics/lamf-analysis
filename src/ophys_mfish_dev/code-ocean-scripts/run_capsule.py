@@ -20,6 +20,7 @@ from datetime import datetime as dt
 from datetime import timezone as tz
 import json
 import argparse
+from pathlib import Path
 
 parser = argparse.ArgumentParser(description="Run a capsule in Code Ocean")
 parser.add_argument("--capsule_id", type=str, help="The capsule id to run", required=False)
@@ -58,7 +59,6 @@ def multiplane_ophys_pipeline_v3():
     return capsule_id, data_assets
 
 
-
 def run_capsule(capsule_id, data_asset_ids, dry_run=False):
     co_cred = CodeOceanCredentials()
     if co_cred is None: # might not need check if class handles
@@ -71,10 +71,10 @@ def run_capsule(capsule_id, data_asset_ids, dry_run=False):
     for da_id in data_asset_ids:
         da_name = co_client.get_data_asset(da_id).json()["name"]
 
-        
         data_assets = [ComputationDataAsset(
             id=da_id,
-            mount=da_name,
+            # mount=da_name,
+            mount="multiplane-ophys_457841_2019-09-26_10-40-09"  # might get computation id results; for multiplane pipeline
         )]
 
         run_request = RunCapsuleRequest(
@@ -92,7 +92,6 @@ def run_capsule(capsule_id, data_asset_ids, dry_run=False):
         proc_time = dt.now(tz.utc).strftime("%Y-%m-%d_%H-%M-%S")
         time.sleep(5)
 
-        
         processed_asset_name = da_name + "_processed_" + proc_time
         run_response["asset_name_processed"] = processed_asset_name
         run_response["asset_id"] = da_id
@@ -102,7 +101,8 @@ def run_capsule(capsule_id, data_asset_ids, dry_run=False):
 
     if not dry_run:
         timestamp = dt.now().strftime("%Y%m%dT%H%M%S")
-        with open(f"./run_jsons/run_results_{timestamp}.json", "w") as fp:
+        json_path = Path(f"./run_jsons/run_results_{timestamp}.json").absolute()
+        with open(json_path, "w") as fp:
             json.dump(data, fp, indent=4)
 
 if __name__ == "__main__":

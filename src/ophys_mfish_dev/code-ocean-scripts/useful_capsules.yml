@@ -10,3 +10,8 @@
   processed_name: "dlc-eye"
   processed_tags: ["derived", "dlc-eye", "ophys-mfish"]
 
+# V3 Ophys pipeline
+- name: Multiplane Ophys Pipeline - with retries
+  capsule_id: 543b69f3-cf29-47b7-8fda-c1482557e814
+  processed_name: "processed"
+  processed_tags: ["derived","ophys-mfish", "gcamp-pilots"]
