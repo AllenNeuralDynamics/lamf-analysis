@@ -14,6 +14,18 @@ import cv2
 # Code Ocean: Ophys
 ####################################################################################################
 
+def check_ophys_folder(path):
+    ophys_names = ['ophys', 'pophys', 'mpophys']
+    ophys_folder = None
+    for ophys_name in ophys_names:
+        ophys_folder = path / ophys_name
+        if ophys_folder.exists():
+            break
+        else:
+            ophys_folder = None
+
+    return ophys_folder
+
 def plane_paths_from_session(session_path: Union[Path, str],
                              data_level: str = "raw") -> list:
     """Get plane paths from a session directory
