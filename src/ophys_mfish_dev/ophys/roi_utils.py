@@ -136,6 +136,7 @@ def reorder_mask_im(mask_im):
     else:
         return mask_im
 
+
 def make_3d_mask_from_2d(mask_im):
 # make a 3d mask from 2d mask
     mask_im = reorder_mask_im(mask_im)
@@ -253,6 +254,45 @@ def plot_contours_overlap_two_masks(mask1: np.ndarray,
     ax.set_facecolor('white')
 
     return ax
+
+
+def plot_contour_and_projections(rois_list, img, mask_key="mask_matrix", save=True, output_folder=None,
+                                 fn=None, color_labels=None):
+    
+    if fn is None:
+        fn = "seg_roi_contours_proj.png"
+
+    # plot contours
+    fig, ax = plt.subplots(figsize=(5, 5))
+    vmax = np.percentile(img, 99.6)
+    ax.imshow(img, vmax=vmax, cmap=plt.cm.gray)
+
+    for roi in rois_list:
+        x = roi['x']
+        y = roi['y']
+        mask =  np.array(roi[mask_key])
+        pad = 5
+        mask = np.pad(mask, pad, mode='constant', constant_values=0) # pad mask so contour works on edge
+        contours = measure.find_contours(mask, 0.5)
+
+        for n, contour in enumerate(contours):
+            # remove pad from contour
+            contour = contour - pad
+
+            ax.plot(contour[:, 1] + x, contour[:, 0] + y, linewidth=.5, color='r')
+
+    ax.set_facecolor('white')
+    # set background to white
+
+    ax.set_xticks([])
+    ax.set_yticks([])
+
+    plt.show()
+
+    # save
+    if save:
+        assert output_folder is not None, "Must provide output_folder"
+        plt.savefig(output_folder / fn, format="png", dpi=300, bbox_inches="tight")
 
 
 # TODO: typical plots for 
