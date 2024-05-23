@@ -257,13 +257,14 @@ def plot_contours_overlap_two_masks(mask1: np.ndarray,
 
 
 def plot_contour_and_projections(rois_list, img, mask_key="mask_matrix", save=True, output_folder=None,
-                                 fn=None, color_labels=None):
+                                 fn=None, color_labels=None,ax=None):
     
     if fn is None:
         fn = "seg_roi_contours_proj.png"
 
     # plot contours
-    fig, ax = plt.subplots(figsize=(5, 5))
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(10, 10))
     vmax = np.percentile(img, 99.6)
     ax.imshow(img, vmax=vmax, cmap=plt.cm.gray)
 

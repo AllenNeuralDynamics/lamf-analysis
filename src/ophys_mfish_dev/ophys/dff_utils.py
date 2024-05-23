@@ -1,5 +1,7 @@
 import numpy as np
 import h5py
+import scipy.stats as stats
+import matplotlib.pyplot as plt
 
 def load_dff_h5(dff_file, remove_nan_rows=True):
     with h5py.File(dff_file, "r") as f:
@@ -170,3 +172,24 @@ def plot_dff_traces_examples(dff_traces, save=True, output_folder=None):
 
 
     plt.tight_layout()
+
+
+def plot_population_dff(dff_traces, vmin=None, vmax=None, title=None):
+
+    y_scale = dff_traces.shape[0] / 50 # 100 works for 80 cells
+    fig, ax = plt.subplots(1, 1, figsize=(20, 10*y_scale))
+    if vmin is None:
+        vmin = np.percentile(dff_traces, 5)
+    if vmax is None:
+        vmax = np.percentile(dff_traces, 99)
+    plt.imshow(dff_traces, aspect='auto', cmap='viridis',vmin=vmin, vmax=vmax)
+
+    if title is not None:
+        plt.title(title)
+    else:
+        plt.title("Population dff traces")
+
+    # show colorbar
+    plt.colorbar()
+
+    return fig, ax
