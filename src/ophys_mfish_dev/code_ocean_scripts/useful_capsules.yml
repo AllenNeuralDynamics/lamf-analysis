@@ -1,17 +1,30 @@
 # List of useful capsule/pipeline IDs
 # Read the yaml file to send to downstream scripts
 
+# Tags (Key: examples)
+# data_level: derived, raw
+# super_project: ophys_mfish
+# project_name: LearningmFISHTask1a
 
 # Capsule contains "standard" DLC model for eye/pupile tracking
 # imported from LIMS and adapted for CO by former Mindscope NP team
 # Run time: ~2 hours (60 min video)
 - name: aind-capsule-eye-tracking
   capsule_id: 4cf0be83-2245-4bb1-a55c-a78201b14bfe
-  processed_name: "dlc-eye"
-  processed_tags: ["derived", "dlc-eye", "ophys-mfish"]
+  dervided_type: "dlc-eye"
+  tags: ["derived", "dlc-eye", "ophys-mfish"]
 
-# V3 Ophys pipeline
-- name: Multiplane Ophys Pipeline - with retries
+# MOP V3 
+- name: Multiplane Ophys Pipeline (v3.0) - with retries
+  short_name:
   capsule_id: 543b69f3-cf29-47b7-8fda-c1482557e814
-  processed_name: "processed"
-  processed_tags: ["derived","ophys-mfish", "gcamp-pilots"]
+  derived_type: "processed"
+  mount: "multiplane-ophys_457841_2019-09-26_10-40-09" # In the case of pipelines; must give current mounted
+  tags: ["derived","ophys-mfish"]
+
+# MOP V4
+- name: Multiplane Ophys Pipeline (v4.0)
+  capsule_id: cd3897a2-bc35-4d9a-9bf2-d86fd9c850ab
+  derived_type: "processed"
+  mount: "multiplane-ophys_677594_2023-07-18_10-38-22"
+  tags: ["derived","ophys-mfish"]
