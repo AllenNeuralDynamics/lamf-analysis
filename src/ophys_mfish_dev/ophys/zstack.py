@@ -16,7 +16,7 @@ import seaborn as sns
 import skimage
 import skimage.exposure
 from PIL import Image, ImageDraw, ImageFont
-from ScanImageTiffReader import ScanImageTiffReader
+from tifffile import read_scanimage_metadata
 from tifffile import TiffFile, imread, imsave
 from tqdm import tqdm
 
@@ -333,27 +333,21 @@ def metadata_from_scanimage_tif(stack_path):
     dict
         roi_groups_dict: 
     """
-    with ScanImageTiffReader(str(stack_path)) as reader:
-        md_string = reader.metadata()
-
-    # split si & roi groups, prep for seprate parse
-    s = md_string.split("\n{")
-    rg_str = "{" + s[1]
-    si_str = s[0]
-
-    # parse 1: extract keys and values, dump, then load again
-    si_metadata = _extract_dict_from_si_string(si_str)
-    # parse 2: json loads works hurray
-    roi_groups_dict = json.loads(rg_str)
+    with open(stack_path, 'rb') as fh:
+        metadata = read_scanimage_metadata(fh)
 
     stack_metadata = {}
-    stack_metadata['num_slices'] = int(si_metadata['SI.hStackManager.actualNumSlices'])
-    stack_metadata['num_volumes'] = int(si_metadata['SI.hStackManager.actualNumVolumes'])
-    stack_metadata['frames_per_slice'] = int(si_metadata['SI.hStackManager.framesPerSlice'])
-    stack_metadata['z_steps'] = _str_to_int_list(si_metadata['SI.hStackManager.zs'])
-    stack_metadata['actuator'] = si_metadata['SI.hStackManager.stackActuator']
-    stack_metadata['num_channels'] = sum(_str_to_bool_list(si_metadata['SI.hPmts.powersOn']))
-    stack_metadata['z_step_size'] = int(si_metadata['SI.hStackManager.actualStackZStepSize'])
+    stack_metadata['num_slices'] = int(metadata[0]['SI.hStackManager.actualNumSlices'])
+    stack_metadata['num_volumes'] = int(metadata[0]['SI.hStackManager.actualNumVolumes'])
+    stack_metadata['frames_per_slice'] = int(metadata[0]['SI.hStackManager.framesPerSlice'])
+    stack_metadata['z_steps'] = metadata[0]['SI.hStackManager.zs']
+    stack_metadata['actuator'] = metadata[0]['SI.hStackManager.stackActuator']
+    stack_metadata['num_channels'] = sum((metadata[0]['SI.hPmts.powersOn']))
+    stack_metadata['z_step_size'] = int(metadata[0]['SI.hStackManager.actualStackZStepSize'])  
+
+    roi_groups_dict = metadata[1]
+
+    si_metadata = metadata[0]
 
     return stack_metadata, si_metadata, roi_groups_dict
 
