@@ -90,10 +90,28 @@ def multiplane_ophys_pipeline_v3_tin():
                 #    'ff24db95-8407-4bba-af0c-bf255d066947',
                 #    '65e0c68c-6d72-4927-a04b-6b50d4ad81cd']
 
+    mount = "multiplane-ophys_457841_2019-09-26_10-40-09"
+
     return capsule_id, data_assets
 
 
-def run_capsule(capsule_id, data_asset_ids, dry_run=False):
+def oi4_jun62024():
+
+    data_assets = ['fc1cdfec-f058-412d-9ec6-8d511427ee7b', # AIND trigger ran 6/11
+                    '5833ef57-4c70-4358-8d56-e3ca4da59bac', # AIND trigger ran 6/11
+                    '944aa90d-575a-474c-8169-81648adfd9da', # AIND trigger ran 6/11
+                    'ef8d91d8-8283-440b-9fd3-63a69295e141'] # AIND trigger ran 6/11
+    
+    #data_assets = ['350148c1-ccfc-4e9c-96a8-e43b8a3a2fc9'] # mounted asset
+
+    # v5
+    capsule_id = "56bf687b-dbcd-4b93-a650-21b8584036ff"
+    mount = "multiplane-ophys_726433_2024-05-14_08-13-02"
+    #tags = ["multiplane-ophys", "ophys-mfish", "gcamp-validation", 'file-splitting']
+
+    return capsule_id, data_assets, mount
+
+def run_capsule(capsule_id, data_asset_ids, mount, dry_run=False):
     co_cred = CodeOceanCredentials()
     if co_cred is None:  # might not need check if class handles
         raise ValueError("No credentials found")
@@ -108,7 +126,7 @@ def run_capsule(capsule_id, data_asset_ids, dry_run=False):
         data_assets = [ComputationDataAsset(
             id=da_id,
             # mount=da_name,
-            mount="multiplane-ophys_457841_2019-09-26_10-40-09"  # might get computation id results; for multiplane pipeline; this is the multiplane mount
+            mount=mount  # might get computation id results; for multiplane pipeline; this is the multiplane mount
         )]
 
         run_request = RunCapsuleRequest(
@@ -141,7 +159,6 @@ def run_capsule(capsule_id, data_asset_ids, dry_run=False):
         with open(json_path, "w") as fp:
             json.dump(data, fp, indent=4)
 
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run a capsule in Code Ocean")
     parser.add_argument("--capsule_id", type=str, help="The capsule id to run", required=False)
@@ -155,7 +172,7 @@ if __name__ == "__main__":
 
     if capsule_id is None or data_assets is None:
         #capsule_id, data_assets = example_define_inputs()
-        capsule_id, data_assets = multiplane_ophys_pipeline_v3_tin()
+        capsule_id, data_assets, mount = oi4_jun62024()
 
     print(f"Running capsule {capsule_id} with data assets {data_assets}")
-    run_capsule(capsule_id, data_assets, dry_run)
+    run_capsule(capsule_id, data_assets, mount, dry_run)
