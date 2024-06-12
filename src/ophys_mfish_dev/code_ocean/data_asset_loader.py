@@ -19,8 +19,9 @@ class DataAssetLoader(CodeOceanDataExplorer):
 
 
     """
-    def __init__(self):
-        super().__init__()
+    def __init__(self,
+                 query: Optional[str] = None):
+        super().__init__(query=query)
 
         # assets
         self.assets = self.get_attached_data_assets()
@@ -177,18 +178,21 @@ class DataAssetLoader(CodeOceanDataExplorer):
 
 
     def _check_for_linked_in_dict(self, name,check_dict):
+        try: 
+            input_base_name = self._data_asset_base_name(name)
+            for asset in check_dict:
 
-        input_base_name = self._data_asset_base_name(name)
-        for asset in check_dict:
-
-            base_name = self._data_asset_base_name(asset)
-            if input_base_name == base_name:
-                return True
+                base_name = self._data_asset_base_name(asset)
+                if input_base_name == base_name:
+                    return True
+        except IndexError:
+            # likely not aind session name form
+            pass
         return False
 
 
     def _get_id_for_name(self, name):
-        for r in self.all_data_assets:
+        for r in self.result:
             if r["name"] == name:
                 return r["id"]
         return None
