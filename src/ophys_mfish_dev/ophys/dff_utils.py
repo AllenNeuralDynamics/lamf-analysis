@@ -81,6 +81,7 @@ def compute_robust_snr_on_dataframe(dataframe):
                         "robust_signal"
                         "robust_snr"
     """
+    dataframe = dataframe.copy()
     if 'dff' in dataframe.columns:
         column = 'dff'
     elif 'filtered_events' in dataframe.columns:
@@ -96,13 +97,24 @@ def top_percentile(dataframe,percentile=99,column="dff"):
     def _top_percentile(dff_trace):
         percentile_value = np.percentile(dff_trace, percentile)
         return percentile_value
-    dataframe['top_1_percent'] = dataframe.apply(lambda x: _top_percentile(x[column]), axis=1)
+    dataframe['top_1_percent'] = dataframe.copy().apply(lambda x: _top_percentile(x[column]), axis=1)
     
     return dataframe
+
+def add_skewness_to_df(df,column="dff"):
+
+    def _skewness_row(trace):
+        return stats.skew(trace)
+
+    df['skewness'] = df.copy().apply(lambda x: _skewness_row(x[column]), axis=1)
+
+    return df
         
         
 def annotate_dff_metrics(dff_traces):
     n_og_dff_traces = len(dff_traces)
+
+    dff_traces = add_skewness_to_df(dff_traces)
 
     # remove rows in dff_traces where skewness is nan
     dff_traces = dff_traces[dff_traces.skewness.notna()]
