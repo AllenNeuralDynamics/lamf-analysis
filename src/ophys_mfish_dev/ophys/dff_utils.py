@@ -133,32 +133,32 @@ def annotate_dff_metrics(dff_traces):
 # Plotting
 ####################################################################################################
 
-def plot_dff_traces_examples(dff_traces, save=True, output_folder=None):
+def plot_dff_traces_examples(dff_traces, frame_rate = None, save=True, output_folder=None):
     """Plot top 10 skew traces, and zoom on most active 1000 frames
 
     """
 
-
+    #frame_rate = 42 # hz
     # drop rows with all nans
     dff_traces = dff_traces[~np.isnan(dff_traces).all(axis=1)]
     # calc skew for each trace
     skew = stats.skew(dff_traces, axis=1, nan_policy='omit')
 
-    # get top 10 skew
-    top_skew_idx = np.argsort(skew)[-10:]
+    # get get -5 tp -10 skew
+    top_skew_idx = np.argsort(skew)[-10:-5]
     top_skew = skew[top_skew_idx]
 
     # grid spec, 10x2, left column is trace, right column is zoom on most active 1000 frames
     # right columsn is 1/3 width of left column
     # plot each trace on diff axis
 
-    fig = plt.figure(figsize=(20, 20))
+    fig = plt.figure(figsize=(10, 15))
     gs = fig.add_gridspec(10, 2)
 
 
-    # for each row in top skew, find index of trace with largest trapz integral
+    #for each row in top skew, find index of trace with largest trapz integral
     active_indices = []
-    active_dff_epochs = []
+    zoom_dff_epochs = []
     for trace in dff_traces[top_skew_idx]:
         n_chunks = len(trace) / 500
         epochs = np.array_split(trace, n_chunks)
@@ -167,33 +167,47 @@ def plot_dff_traces_examples(dff_traces, save=True, output_folder=None):
 
         active_dff = epochs[max_auc_idx]
         active_dff = active_dff[:500]
-        active_dff_epochs.append(active_dff)
+        zoom_dff_epochs.append(active_dff)
+
+    # # select last 500 frames of each trace
+    # zoom_dff_epochs = []
+    # for trace in dff_traces[top_skew_idx]:
+    #     zoom_dff_epochs.append(trace[-500:])
     
 
     for i, idx in enumerate(top_skew_idx):
         skew = np.round(top_skew[i], 2)
         # plot trace
         ax = fig.add_subplot(gs[i, 0])
-        ax.plot(dff_traces[idx, :])
-        ax.set_title(f"Skew: {skew}")
+        ax.plot(dff_traces[idx, :],linewidth=0.5)
+        #ax.set_title(f"Skew: {skew}")
 
         # plot zoom
         ax = fig.add_subplot(gs[i, 1])
-        ax.plot(active_dff_epochs[i])
-        ax.set_title(f"Skew: {skew}")
+        ax.plot(zoom_dff_epochs[i],linewidth=0.5)
+        #ax.set_title(f"Skew: {skew}")
+
+        if frame_rate:
+            #convert x to seconds
+            ax.set_xlabel("Time (s)")
+            ax.set_xticks(np.arange(0, 2000, 500))
+            ax.set_xticklabels(np.round(np.arange(0, 2000, 500) / frame_rate))
+
 
 
     plt.tight_layout()
 
-
+import seaborn as sns
 def plot_population_dff(dff_traces, vmin=None, vmax=None, title=None):
+    sns.set_context("poster")
+    y_scale = dff_traces.shape[0] / 100 # 100 works for 80 cells
+    y_scale = 1.2
+    fig, ax = plt.subplots(1, 1, figsize=(25, 10*y_scale))
 
-    y_scale = dff_traces.shape[0] / 50 # 100 works for 80 cells
-    fig, ax = plt.subplots(1, 1, figsize=(20, 10*y_scale))
     if vmin is None:
-        vmin = np.percentile(dff_traces, 5)
+        vmin = np.percentile(dff_traces, 15)
     if vmax is None:
-        vmax = np.percentile(dff_traces, 99)
+        vmax = np.percentile(dff_traces, 98)
     plt.imshow(dff_traces, aspect='auto', cmap='viridis',vmin=vmin, vmax=vmax)
 
     if title is not None:
@@ -201,7 +215,49 @@ def plot_population_dff(dff_traces, vmin=None, vmax=None, title=None):
     else:
         plt.title("Population dff traces")
 
-    # show colorbar
-    plt.colorbar()
+    plt.xlabel("Time (frames)")
+    plt.ylabel("Cell index")
+
+    # ytick every 100 cells
+    ax.set_yticks(np.arange(0, dff_traces.shape[0], 100))
+    ax.set_yticklabels(np.arange(0, dff_traces.shape[0],
+                                100).astype(int))
+
+    # show colorbar label dff
+    cbar = plt.colorbar()
+    cbar.set_label("df/f")
+
+    return fig, ax
+
+
+
+def plot_population_dff_normalize(dff_traces, vmin=None, vmax=None, title=None):
+    sns.set_context("poster")
+    y_scale = dff_traces.shape[0] / 100 # 100 works for 80 cells
+    y_scale = 1.2
+    fig, ax = plt.subplots(1, 1, figsize=(25, 10*y_scale))
+    
+    # normalize each row to half max
+    dff_traces = dff_traces / np.max(dff_traces, axis=1)[:, None]
+    vmin = 0
+    vmax = .4
+    plt.imshow(dff_traces, aspect='auto', cmap='viridis',vmin=vmin, vmax=vmax)
+
+    if title is not None:
+        plt.title(title)
+    else:
+        plt.title("Population dff traces - normlize ")
+
+    plt.xlabel("Time (frames)")
+    plt.ylabel("Cell index")
+
+    # ytick every 100 cells
+    ax.set_yticks(np.arange(0, dff_traces.shape[0], 100))
+    ax.set_yticklabels(np.arange(0, dff_traces.shape[0],
+                                100).astype(int))
+
+    # show colorbar label dff
+    cbar = plt.colorbar()
+    cbar.set_label("df/f (norm half max)")
 
     return fig, ax
