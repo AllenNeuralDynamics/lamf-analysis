@@ -257,7 +257,7 @@ def plot_contours_overlap_two_masks(mask1: np.ndarray,
 
 
 def plot_contour_and_projections(rois_list, img, mask_key="mask_matrix", save=True, output_folder=None,
-                                 fn=None, color_labels=None,ax=None):
+                                 fn=None, color_labels=None,ax=None, filter_ids=None):
     
     if fn is None:
         fn = "seg_roi_contours_proj.png"
@@ -275,15 +275,17 @@ def plot_contour_and_projections(rois_list, img, mask_key="mask_matrix", save=Tr
         pad = 5
         mask = np.pad(mask, pad, mode='constant', constant_values=0) # pad mask so contour works on edge
         contours = measure.find_contours(mask, 0.5)
+        roi_id = roi['id']
+
+        if filter_ids is not None:
+            if roi_id not in filter_ids:
+                continue
 
         for n, contour in enumerate(contours):
-            # remove pad from contour
-            contour = contour - pad
-
+            contour = contour - pad # remove pad from contour
             ax.plot(contour[:, 1] + x, contour[:, 0] + y, linewidth=.5, color='r')
 
     ax.set_facecolor('white')
-    # set background to white
 
     ax.set_xticks([])
     ax.set_yticks([])
