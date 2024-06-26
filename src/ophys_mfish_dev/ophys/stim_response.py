@@ -2,6 +2,9 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 from typing import Union
+import seaborn as sns
+import matplotlib.pyplot as plt
+
 
 # TODO: change to brain_observatory utilities
 # from mindscope_utilities.visual_behavior_ophys.data_formatting import get_stimulus_response_df
@@ -592,3 +595,48 @@ def annotate_flashes_with_reward_rate(dataset):
         reward_rate_by_frame.append(reward_rate_by_frame[-1])
     flashes['reward_rate'] = reward_rate_by_frame
     return flashes
+
+
+######################################################################
+# Plotting
+######################################################################
+
+
+
+def plot_stim_response_for_roi(sr_df, cell_roi_id, data_type, event_type):
+    """Plot the stimulus repsonse for a specific cell_roi_id
+    """
+    cell_df = sr_df[sr_df.cell_roi_id == cell_roi_id]
+    traces = np.vstack(cell_df.trace.values)
+    mean_trace = np.nanmean(traces, axis=0)
+    timestamps = np.round(cell_df['trace_timestamps'].values[0],2)
+    
+    fig, ax = plt.subplots(figsize=(7, 5))
+    plt.plot(timestamps, mean_trace)
+    plt.xlabel('2P frames')
+    plt.ylabel(f'{data_type}')
+    plt.title(f'Mean population response to {event_type}')
+    
+    plt.axvline(0, color='r', linestyle='--')
+    plt.show()
+
+def plot_stim_response_population_mean(sr_df, data_type, event_type):
+    """
+    Plot the mean population stimulus response
+    """
+    sns.set_style('darkgrid')
+    sns.set_context('talk')
+    traces = np.vstack(sr_df.trace.values)
+    mean_trace = np.nanmean(traces, axis=0)
+    timestamps = np.round(sr_df['trace_timestamps'].values[0],2)
+    
+    fig, ax = plt.subplots(figsize=(7, 5))
+    plt.plot(timestamps, mean_trace)
+    plt.xlabel('2P frames')
+    plt.ylabel(f'{data_type}')
+    plt.title(f'Mean population response to {event_type}')
+    
+    plt.axvline(0, color='r', linestyle='--',alpha=0.5, label='stimulus onset')
+    # legend top left, small, no box
+    plt.legend(loc='upper left', fontsize='small', frameon=False)
+    plt.show()
