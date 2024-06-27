@@ -627,7 +627,7 @@ def stim_response_all_mp(dataset):
     # Map the function across all combinations of data_types and event_types
     for event_type in event_types:
         for data_type in data_types:
-            result = pool.apply_async(_process_stim_response, (dataset,data_type, event_type))
+            result = pool.apply_async(_process_stim_response, (dataset, data_type, event_type))
             results_dict[(event_type, data_type)] = result
 
 
