@@ -151,34 +151,34 @@ from brain_observatory_utilities.datasets.optical_physiology.data_formatting imp
 # utilites
 ####################################################################################################
 
+# # TODO: clean + document OLD
+# def get_standard_mean_df(sr_df):
+#     time_window = [-3, 3.1]
+#     get_pref_stim = False  # relevant to image_name conditions
+
+#     if "response_window_duration" in sr_df.keys():
+#         response_window_duration = sr_df.response_window_duration.values[0]
+
+#     output_sampling_rate = sr_df.ophys_frame_rate.unique()[0]
+#     conditions = ["cell_roi_id"]
+#     msr_df = get_mean_df(sr_df, 
+#                          conditions=conditions,
+#                          frame_rate=output_sampling_rate,
+#                          window_around_timepoint_seconds=time_window,
+#                          response_window_duration_seconds=response_window_duration,
+#                          get_pref_stim=get_pref_stim,
+#                          exclude_omitted_from_pref_stim=True)
+#     return msr_df
+
+
 # TODO: clean + document
-def get_standard_mean_df(sr_df):
-    time_window = [-3, 3.1]
-    get_pref_stim = False  # relevant to image_name conditions
-
-    if "response_window_duration" in sr_df.keys():
-        response_window_duration = sr_df.response_window_duration.values[0]
-
-    output_sampling_rate = sr_df.ophys_frame_rate.unique()[0]
-    conditions = ["cell_roi_id"]
-    msr_df = get_mean_df(sr_df, 
-                         conditions=conditions,
-                         frame_rate=output_sampling_rate,
-                         window_around_timepoint_seconds=time_window,
-                         response_window_duration_seconds=response_window_duration,
-                         get_pref_stim=get_pref_stim,
-                         exclude_omitted_from_pref_stim=True)
-    return msr_df
-
-
-# TODO: clean + document
-def get_mean_df(stim_response_df: pd.DataFrame,
-                conditions=['cell', 'change_image_name'],
-                frame_rate=11.0,
-                window_around_timepoint_seconds: list = [-3, 3],
-                response_window_duration_seconds: float = 0.5,
-                get_pref_stim=True,
-                exclude_omitted_from_pref_stim=True):
+def mean_stim_response_df(stim_response_df: pd.DataFrame,
+                          conditions=["cell_roi_id"],
+                          frame_rate=None,
+                          window_around_timepoint_seconds: list = [-3, 3],
+                          response_window_duration_seconds: float = None,
+                          get_pref_stim=False,
+                          exclude_omitted_from_pref_stim=True):
     """
     # MJD NOTES
 
@@ -188,10 +188,24 @@ def get_mean_df(stim_response_df: pd.DataFrame,
     4) "frame_rate" in df already
     5) get_pre_stim:
     """
+
+    if frame_rate is None:
+        try:
+            frame_rate = stim_response_df.ophys_frame_rate.unique()[0]
+        except Exception as e:
+            print("Frame rate not found in stim_response_df, please provide frame_rate as an argument")
+
+    if response_window_duration_seconds is None:
+        try:
+            response_window_duration = stim_response_df.response_window_duration.values[0]
+        except Exception as e:
+            response_window_duration = 0.5
+            print("Response window duration not found in stim_response_df, using default value of 0.5 seconds")
+
     window = window_around_timepoint_seconds
-    response_window_duration = response_window_duration_seconds
 
     rdf = stim_response_df.copy()
+
 
     mdf = rdf.groupby(conditions).apply(get_mean_sem_trace)
     mdf = mdf[['mean_response', 'sem_response', 'mean_trace', 'sem_trace',
@@ -644,8 +658,40 @@ def stim_response_all_mp(dataset):
 
     return results_dict
 
+def stim_response_all(dataset):
+    """no multiprocessing, just for loop"""
+
+    data_types = ['dff', 'events']
+    event_types = ["changes", "images", "omissions"]
+
+    results_dict = {}
+
+    # Map the function across all combinations of data_types and event_types
+    for event_type in event_types:
+        for data_type in data_types:
+
+
+            if event_type in ['images', 'changes']:
+                response_window_duration = 0.5
+                time_window = [-0.5, 0.75]
+            elif event_type is 'omissions':
+                response_window_duration = 0.75
+                time_window = [-3, 3]
+
+
+            print(f"Processing event_type={event_type}, data_type={data_type}")
+            results_dict[(event_type, data_type)] = get_stimulus_response_df(dataset,
+                                                                data_type=data_type,
+                                                                event_type=event_type,
+                                                                time_window=time_window,
+                                                                interpolate=False,
+                                                                output_sampling_rate=None,
+                                                                response_window_duration=response_window_duration)
+
+    return results_dict
+
 ######################################################################
-# Plotting
+# Plotting: stim response 
 ######################################################################
 
 
@@ -671,6 +717,9 @@ def plot_stim_response_population_mean(sr_df, data_type, event_type, ax=None, ti
     """
     Plot the mean population stimulus response
     """
+    sns.set_style('darkgrid')
+    sns.set_context('talk')
+
     if ax is None:
         fig, ax = plt.subplots(figsize=(7, 5))
 
@@ -679,8 +728,7 @@ def plot_stim_response_population_mean(sr_df, data_type, event_type, ax=None, ti
     else:
         ax.set_title(title)
 
-    sns.set_style('darkgrid')
-    sns.set_context('talk')
+    
 
     # processes data
     traces = np.vstack(sr_df.trace.values)
@@ -695,7 +743,94 @@ def plot_stim_response_population_mean(sr_df, data_type, event_type, ax=None, ti
     # actually keeps legend on last plot
     plt.legend(loc='upper left', fontsize='small', frameon=False)
 
+###########
+# Plotting: mean stim response
+########
 
+def plot_mean_stim_response_heatmap(msr_df,
+                                    event_type,
+                                    data_type, 
+                                    trace_type='mean_trace',
+                                    ax=None):
+
+
+    sns.set_style("white")
+
+    if ax is None:
+        fig, ax = plt.subplots(1,figsize=(10, 20))
+
+    mean_traces = np.vstack(msr_df[trace_type].values)
+    timestamps = np.round(msr_df['trace_timestamps'].values[0],2)
+
+    vmax = np.percentile(mean_traces, 99.7)
+    vmin = np.percentile(mean_traces, 5.0)
+
+    ax.imshow(mean_traces, aspect='auto',vmax=vmax, vmin=vmin)
+    ax.set_xlabel('Time (s)')
+    ax.set_ylabel('Cell index')
+
+    
+    cbar = plt.colorbar(ax.imshow(mean_traces, aspect='auto', vmax=vmax, vmin=vmin), ax=ax, fraction=0.02, pad=0.01)
+    cbar.set_label('Events')
+
+    return ax
+
+
+
+def plot_mean_stim_response_for_roi(msr_df, cell_roi_id, data_type, event_type,ax=None):
+    """
+    Plot the stimulus response for a specific cell_roi_id
+    """
+    cell_df = msr_df[msr_df.cell_roi_id == cell_roi_id]
+    timestamps = np.round(cell_df['trace_timestamps'].values[0],2)
+    mean_trace = cell_df['mean_trace'].values[0]
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(7, 5))
+    ax.plot(timestamps, mean_trace)
+    ax.set_xlabel('2P frames')
+    ax.set_ylabel(f'{data_type}')
+    ax.set_title(f'Mean population response to {event_type}')
+    
+    ax.axvline(0, color='r', linestyle='--')
+    plt.show()
+
+
+def plot_mean_stim_response_top_ten(msr_df, data_type, event_type, response_trace="mean_trace"):
+    """
+    Plot the mean response of the top 10 cells
+
+    Parameters
+    ----------
+    msr_df : pd.DataFrame
+        Mean stimulus response DataFrame
+    data_type : str
+        Data type of the response
+    event_type : str
+        Type of event
+    response_trace : str
+        Column name of the response
+        cols = ['mean_trace', 'mean_baseline_diff_trace]
+
+    Returns
+    -------
+    None
+    """
+
+    y_scale = 0.05
+    mean_traces = np.vstack(msr_df[response_trace].values)
+    timestamps = np.round(msr_df['trace_timestamps'].values[0],2)
+
+    plt.figure(figsize=(5, 10))
+    sns.set_style('darkgrid')
+    for i in range(10):
+        plt.plot(timestamps, mean_traces[i] + i*y_scale)
+
+    # ylabel, mean response, top 10 cells
+    plt.yticks(np.arange(10)*y_scale, msr_df['cell_roi_id'][:10])
+    plt.ylabel(f'Mean response {data_type}')
+    plt.xlabel('2P frames')
+    plt.title(f'Top 10 cells by mean response to {event_type}')
 
 #############################
 # Figures
@@ -705,6 +840,8 @@ def plot_stim_response_population_mean(sr_df, data_type, event_type, ax=None, ti
 def fig_stim_response(results_dict):
     """
     """
+    sns.set_style('darkgrid')
+    sns.set_context('talk')
 
     fig, axes = plt.subplots(3, 2, figsize=(16, 12))
     axes = axes.flatten()
