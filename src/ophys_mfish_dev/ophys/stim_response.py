@@ -658,7 +658,7 @@ def stim_response_all_mp(dataset):
 
     return results_dict
 
-def stim_response_all(dataset):
+def stim_response_all(dataset, full_time_window=False):
     """no multiprocessing, just for loop"""
 
     data_types = ['dff', 'events']
@@ -670,14 +670,12 @@ def stim_response_all(dataset):
     for event_type in event_types:
         for data_type in data_types:
 
-
             if event_type in ['images', 'changes']:
                 response_window_duration = 0.5
-                time_window = [-0.5, 0.75]
-            elif event_type is 'omissions':
+                time_window =  [-3, 3] if full_time_window else [-0.5, 0.75]
+            elif event_type == 'omissions':
                 response_window_duration = 0.75
                 time_window = [-3, 3]
-
 
             print(f"Processing event_type={event_type}, data_type={data_type}")
             results_dict[(event_type, data_type)] = get_stimulus_response_df(dataset,
