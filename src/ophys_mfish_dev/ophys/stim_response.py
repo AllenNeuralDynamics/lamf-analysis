@@ -5,6 +5,9 @@ from typing import Union
 import seaborn as sns
 import matplotlib.pyplot as plt
 
+import multiprocessing as mp
+from brain_observatory_utilities.datasets.optical_physiology.data_formatting import get_stimulus_response_df
+
 
 # TODO: change to brain_observatory utilities
 # from mindscope_utilities.visual_behavior_ophys.data_formatting import get_stimulus_response_df
@@ -598,6 +601,50 @@ def annotate_flashes_with_reward_rate(dataset):
 
 
 ######################################################################
+# multiprocessing
+#######################################################################
+
+def _process_stim_response(dataset, data_type, event_type):
+        # Call your function with specific data_type and event_type
+        return (event_type, data_type, get_stimulus_response_df(dataset,
+                                                                data_type=data_type,
+                                                                event_type=event_type,
+                                                                time_window=[-3, 3],
+                                                                interpolate=False,
+                                                                output_sampling_rate=None,
+                                                                response_window_duration=0.5))
+
+def stim_response_all_mp(dataset):
+
+    data_types = ['dff', 'events']
+    event_types = ["changes", "images", "omissions"]
+
+    # Create a multiprocessing pool
+    pool = mp.Pool()
+
+    results_dict = {}
+
+    # Map the function across all combinations of data_types and event_types
+    for event_type in event_types:
+        for data_type in data_types:
+            result = pool.apply_async(_process_stim_response, (dataset,data_type, event_type))
+            results_dict[(event_type, data_type)] = result
+
+
+    # Close the pool and wait for all processes to finish
+    pool.close()
+    pool.join()
+
+    # Process the results from the dictionary
+    for key, result in results_dict.items():
+        event_type, data_type = key
+        _, _, sr_df = result.get()  # Retrieve data_type, event_type, and sr_df from result
+        print(f"Result for event_type={event_type}, data_type={data_type}:")
+        results_dict[key] = sr_df
+
+    return results_dict
+
+######################################################################
 # Plotting
 ######################################################################
 
@@ -620,23 +667,50 @@ def plot_stim_response_for_roi(sr_df, cell_roi_id, data_type, event_type):
     plt.axvline(0, color='r', linestyle='--')
     plt.show()
 
-def plot_stim_response_population_mean(sr_df, data_type, event_type):
+def plot_stim_response_population_mean(sr_df, data_type, event_type, ax=None, title=None):
     """
     Plot the mean population stimulus response
     """
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(7, 5))
+
+    if title is None:
+        ax.set_title(f'Mean population response to {event_type}')
+    else:
+        ax.set_title(title)
+
     sns.set_style('darkgrid')
     sns.set_context('talk')
+
+    # processes data
     traces = np.vstack(sr_df.trace.values)
     mean_trace = np.nanmean(traces, axis=0)
     timestamps = np.round(sr_df['trace_timestamps'].values[0],2)
     
-    fig, ax = plt.subplots(figsize=(7, 5))
-    plt.plot(timestamps, mean_trace)
-    plt.xlabel('2P frames')
-    plt.ylabel(f'{data_type}')
-    plt.title(f'Mean population response to {event_type}')
-    
-    plt.axvline(0, color='r', linestyle='--',alpha=0.5, label='stimulus onset')
-    # legend top left, small, no box
+    ax.plot(timestamps, mean_trace)
+    ax.set_xlabel('Time (s)')
+    ax.set_ylabel(f'{data_type}')
+    ax.axvline(0, color='r', linestyle='--', alpha=0.5, label='stimulus onset')
+
+    # actually keeps legend on last plot
     plt.legend(loc='upper left', fontsize='small', frameon=False)
+
+
+
+#############################
+# Figures
+#############################
+
+
+def fig_stim_response(results_dict):
+    """
+    """
+
+    fig, axes = plt.subplots(3, 2, figsize=(16, 12))
+    axes = axes.flatten()
+    for i, (event_type, data_type) in enumerate(results_dict.keys()):
+        sr_df = results_dict[(event_type, data_type)]
+        plot_stim_response_population_mean(sr_df, data_type, event_type, 
+                                              ax=axes[i], title=f"{event_type}")
+    plt.tight_layout()
     plt.show()
