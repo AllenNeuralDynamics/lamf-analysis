@@ -9,6 +9,7 @@ import skimage
 import scipy
 import pandas as pd
 import cv2
+from aind_ophys_utils.motion_border_utils import get_max_correction_from_df
 
 ####################################################################################################
 # Code Ocean: Ophys
@@ -67,14 +68,24 @@ def get_motion_correction_crop_xy_range(plane_path: Union[Path, str]) -> tuple:
     list, list
         Lists of y range and x range, [start, end] pixel index
     """
+    processing_json_fn = list((Path(plane_path) / 'motion_correction').glob(
+        'processing.json'))[0]
+    processing_json = json.load(open(processing_json_fn))
+    max_shift_prop = processing_json['processing_pipeline']['data_processes'][0]['parameters']['suite2p_args']['maxregshift']
+    
     motion_csv = list((Path(plane_path) / 'motion_correction').glob(
         '*_motion_transform.csv'))[0]
     motion_df = pd.read_csv(motion_csv)
 
-    max_y = np.ceil(max(motion_df.y.max(), 1)).astype(int)
-    min_y = np.floor(min(motion_df.y.min(), 0)).astype(int)
-    max_x = np.ceil(max(motion_df.x.max(), 1)).astype(int)
-    min_x = np.floor(min(motion_df.x.min(), 0)).astype(int)
-    range_y = [-min_y, -max_y]
-    range_x = [-min_x, -max_x]
+    motion_border = get_max_correction_from_df(motion_df, max_shift=512*max_shift_prop)
+    
+    range_y = [motion_border.down, motion_border.up]
+    range_x = [motion_border.left, motion_border.right]
+
+    # max_y = np.ceil(max(motion_df.y.max(), 1)).astype(int)
+    # min_y = np.floor(min(motion_df.y.min(), 0)).astype(int)
+    # max_x = np.ceil(max(motion_df.x.max(), 1)).astype(int)
+    # min_x = np.floor(min(motion_df.x.min(), 0)).astype(int)
+    # range_y = [-min_y, -max_y]
+    # range_x = [-min_x, -max_x]
     return range_y, range_x
