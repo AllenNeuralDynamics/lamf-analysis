@@ -24,13 +24,13 @@ class CodeOceanDataExplorer(object):
 
         self.client = self._get_client()
         self.query = query
-        self.result = self._all_data_assets()
+        self.assets = self._all_data_assets()
         self.verbose = verbose
 
         if self.verbose:
             print("CodeOceanDataExplorer initialized\n---------------------------------")
             print(f"Query: {query}")
-            print(f"Number of assets: {len(self.result)}")
+            print(f"Number of assets: {len(self.assets)}")
         
 
     def _get_client(self):
@@ -71,18 +71,18 @@ class CodeOceanDataExplorer(object):
 
     @property
     def derived_assets(self):
-        derived = self.filter_by_tag(self.result, 'derived')
+        derived = self.filter_by_tag('derived')
         return derived
 
     @property
     def raw_assets(self):
-        raw = self.filter_by_tag(self.result, 'raw')
+        raw = self.filter_by_tag('raw')
         return raw
 
-    def filter_by_tag(self, results, tag, return_no_tag = False):
+    def filter_by_tag(self, tag, return_no_tag = False):
         filtered_assets=[]
         no_tags_assets = []
-        for r in results:
+        for r in self.assets:
             try:
                 if tag in r['tags']:
                     filtered_assets.append(r)
