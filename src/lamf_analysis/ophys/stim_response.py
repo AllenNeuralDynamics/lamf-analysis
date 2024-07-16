@@ -772,7 +772,7 @@ def plot_mean_stim_response_heatmap(msr_df,
 
     # set x labeks to timestamps
     ax.set_xticks(np.arange(0, len(timestamps), 600))
-    ax.set_xticklabels(np.round(timestamps[::600],2))
+    ax.set_xticklabels(np.round(timestamps[::600], 2))
     # rotate x labels
     plt.xticks(rotation=90)
 
@@ -861,9 +861,9 @@ def msr_df_for_dataset(dataset, event_type = "changes", data_type = "events" ):
                                     get_pref_stim=False,
                                     exclude_omitted_from_pref_stim=True)
 
-    msr_df = msr_df.sort_values(by='mean_response', ascending=False).reset_index(drop=True)
+    msr_df.sort_values(by='mean_response', ascending=False,inplace=True)
 
-    return msr_df
+    return msr_df.reset_index(drop=True)
 
 #############################
 # Figures

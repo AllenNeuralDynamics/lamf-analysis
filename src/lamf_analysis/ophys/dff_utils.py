@@ -243,7 +243,8 @@ def plot_dff_traces_examples(dff_traces, frame_rate = None, save=True, output_fo
     """Plot top 10 skew traces, and zoom on most active 1000 frames
 
     """
-
+    sns.set_style("white")
+    sns.set_context("talk")
     #frame_rate = 42 # hz
     # drop rows with all nans
     dff_traces = dff_traces[~np.isnan(dff_traces).all(axis=1)]
@@ -258,7 +259,7 @@ def plot_dff_traces_examples(dff_traces, frame_rate = None, save=True, output_fo
     # right columsn is 1/3 width of left column
     # plot each trace on diff axis
 
-    fig = plt.figure(figsize=(10, 15))
+    fig = plt.figure(figsize=(12, 17))
     gs = fig.add_gridspec(10, 2)
 
 
@@ -285,13 +286,17 @@ def plot_dff_traces_examples(dff_traces, frame_rate = None, save=True, output_fo
         skew = np.round(top_skew[i], 2)
         # plot trace
         ax = fig.add_subplot(gs[i, 0])
-        ax.plot(dff_traces[idx, :],linewidth=0.5)
+        ax.plot(dff_traces[idx, :],linewidth=0.75)
         #ax.set_title(f"Skew: {skew}")
 
         # plot zoom
         ax = fig.add_subplot(gs[i, 1])
-        ax.plot(zoom_dff_epochs[i],linewidth=0.5)
+        ax.plot(zoom_dff_epochs[i],linewidth=0.75)
         #ax.set_title(f"Skew: {skew}")
+
+        # ax off top and right
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
 
         if frame_rate:
             #convert x to seconds
@@ -305,9 +310,10 @@ def plot_dff_traces_examples(dff_traces, frame_rate = None, save=True, output_fo
 
 import seaborn as sns
 def plot_population_dff(dff_traces, vmin=None, vmax=None, title=None):
+    sns.set_style("white")
     sns.set_context("poster")
     y_scale = dff_traces.shape[0] / 100 # 100 works for 80 cells
-    y_scale = 1.2
+    y_scale = 1.4
     fig, ax = plt.subplots(1, 1, figsize=(25, 10*y_scale))
 
     if vmin is None:
