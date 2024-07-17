@@ -68,10 +68,8 @@ class DataAssetLoader(CodeOceanDataExplorer):
         auth = ("'" + os.getenv(self.CO_TOKEN_VAR_NAME), "'")
 
         responses = requests.post(url=url, headers=headers, auth=auth, json=assets).json()
-        print(responses)
-
-        # iterate reponse.text
-
+        
+        # TODO: get name from id
         for response in responses:
             asset_id = response['id']
             if response["mount_state"] =="unchanged":
