@@ -221,7 +221,7 @@ def calc_zdrift(movie_dir: Path,
 # FOV + Zstack registration
 ####################################################################################################
 
-def two_step_register_to_stack(fov, stack, use_clahe=True, use_valid_pix_pc=True, use_valid_pix_sr=True,
+def two_step_register_to_stack(fov, stack, use_clahe=True, use_valid_pix_pc=False, use_valid_pix_sr=True,
                                sr_method='affine'):
     """Register FOV to z-stack using 2-step registration
     First register using phase correlation and then using StackReg
@@ -272,14 +272,18 @@ def two_step_register_to_stack(fov, stack, use_clahe=True, use_valid_pix_pc=True
         fov_for_reg = fov.copy()
         stack_for_reg = stack.copy()
 
-    matched_plane_index, corrcoef, fov_reg_pc, _, _ = fov_stack_register_phase_correlation(
+    fov_reg_pc, corrcoef_pc_arr, shift_list = fov_stack_register_phase_correlation(
         fov_for_reg, stack_for_reg, use_clahe=False, use_valid_pix=use_valid_pix_pc)
-    matched_plane_index, corrcoef, fov_reg, tmat, tmat_list = fov_stack_register_stackreg(
-        fov_for_reg, stack_for_reg, use_clahe=False, sr_method=sr_method, use_valid_pix=use_valid_pix_sr)
-    return matched_plane_index, corrcoef, fov_reg, tmat, tmat_list
+    best_match_pc_ind = np.argmax(corrcoef_pc_arr)
+    fov_for_stackreg = fov_reg_pc[best_match_pc_ind]
+    best_shift = shift_list[best_match_pc_ind]
+    corrcoef_sr_arr, fov_reg, best_tmat, tmat_list = fov_stack_register_stackreg(
+        fov_for_stackreg, stack_for_reg, use_clahe=False, sr_method=sr_method, use_valid_pix=use_valid_pix_sr)
+    matched_plane_index = np.argmax(corrcoef_sr_arr)
+    return matched_plane_index, corrcoef_sr_arr, corrcoef_pc_arr, fov_reg, fov_for_stackreg, best_tmat, best_shift
 
 
-def fov_stack_register_stackreg(fov, stack, use_clahe=True, sr_method='affine', tmat=None):
+def fov_stack_register_stackreg(fov, stack, use_clahe=True, sr_method='affine', tmat=None, use_valid_pix=True):
 
     if use_clahe:
         fov_for_reg = image_normalization(skimage.exposure.equalize_adapthist(
@@ -299,11 +303,14 @@ def fov_stack_register_stackreg(fov, stack, use_clahe=True, sr_method='affine', 
     else:
         raise ValueError('"sr_method" should be either "affine" or "rigid_body"')
     
-    assert fov.min() > 0
-    valid_pix_threshold = fov.min()/10
+    assert fov.min() >= 0
+    if use_valid_pix:
+        valid_pix_threshold = fov.min()/10
+    else:
+        valid_pix_threshold = -1
     num_pix_threshold = fov.shape[0] * fov.shape[1] / 2
     
-    corrcoef = np.zeros(stack.shape[0])
+    corrcoef_arr = np.zeros(stack.shape[0])
     
     if tmat is None:
         temp_cc = []
@@ -327,11 +334,9 @@ def fov_stack_register_stackreg(fov, stack, use_clahe=True, sr_method='affine', 
         best_tmat = tmat
     fov_reg = sr.transform(fov, tmat=best_tmat)
     for zi, zstack_plane in enumerate(stack):
-        corrcoef[zi] = np.corrcoef(zstack_plane[valid_y, valid_x].flatten(),
+        corrcoef_arr[zi] = np.corrcoef(zstack_plane[valid_y, valid_x].flatten(),
                                    fov_reg[valid_y, valid_x].flatten())[0,1]
-    matched_ind = np.argmax(corrcoef)
-
-    return matched_ind, corrcoef, fov_reg, best_tmat, tmat_list
+    return corrcoef_arr, fov_reg, best_tmat, tmat_list    
 
 
 def fov_stack_register_phase_correlation(fov, stack, use_clahe=True, use_valid_pix=True):
@@ -377,7 +382,7 @@ def fov_stack_register_phase_correlation(fov, stack, use_clahe=True, use_valid_p
         stack_for_reg = stack.copy()
 
     fov_reg_stack = np.zeros_like(stack)
-    corrcoef = np.zeros(stack.shape[0])
+    corrcoef_arr = np.zeros(stack.shape[0])
     shift_list = []
     for pi in range(stack.shape[0]):
         shift, _, _ = skimage.registration.phase_cross_correlation(
@@ -386,13 +391,13 @@ def fov_stack_register_phase_correlation(fov, stack, use_clahe=True, use_valid_p
         fov_reg_stack[pi, :, :] = fov_reg
         if use_valid_pix:
             valid_y, valid_x = np.where(fov_reg > 0)
-            corrcoef[pi] = np.corrcoef(stack[pi, valid_y, valid_x].flatten(
+            corrcoef_arr[pi] = np.corrcoef(stack[pi, valid_y, valid_x].flatten(
             ), fov_reg[valid_y, valid_x].flatten())[0, 1]
         else:
-            corrcoef[pi] = np.corrcoef(
+            corrcoef_arr[pi] = np.corrcoef(
                 stack[pi, :, :].flatten(), fov_reg.flatten())[0, 1]
-        shift_list.append(shift)
-    return fov_reg_stack, corrcoef, shift_list
+        shift_list.append(shift)    
+    return fov_reg_stack, corrcoef_arr, shift_list
 
 
 def med_filt_z_stack(zstack, kernel_size=5):
