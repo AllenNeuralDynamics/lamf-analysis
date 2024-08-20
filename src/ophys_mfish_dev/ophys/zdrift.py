@@ -115,12 +115,12 @@ def calc_zdrift(movie_dir: Path,
     segment_reg_imgs = []
     shift_list = []
     for i in range(episodic_mean_fovs_crop.shape[0]):
-        fov_reg, cc, shift = fov_stack_register_phase_correlation(
+        fov_reg_stack, cc, shift = fov_stack_register_phase_correlation(
             episodic_mean_fovs_crop[i], stack_pre, use_clahe=use_clahe,
             use_valid_pix=use_valid_pix)
         matched_plane_indices[i] = np.argmax(cc)
         corrcoef.append(cc)
-        segment_reg_imgs.append(fov_reg)
+        segment_reg_imgs.append(fov_reg_stack[np.argmax(cc)])
         shift_list.append(shift)
     corrcoef = np.asarray(corrcoef)
 
