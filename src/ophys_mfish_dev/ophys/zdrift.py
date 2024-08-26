@@ -15,6 +15,7 @@ import ophys_mfish_dev.ophys.zstack as zstack
 # Use phase correlation:
 # Median filtering and rolling averaging the z-stack
 # Crop images based on the motion correction output
+# Take mean FOV image, calculate transformation, apply to episodic mean FOVs, and calculate correlation coefficient
 # (Optional) Use CLAHE for contrast adjustment
 # (Optional) Calculate correlation coefficient only in the valid pixels after transformation
 #       - Penalize too much shift by using valid pixel threshold
@@ -52,11 +53,10 @@ def calc_zdrift(movie_dir: Path,
                 ):
     """Calc zdrift for an ophys movie relative to reference stack
 
-    Register the mean FOV image to the z-stack using 2-step registration.
+    Register the mean FOV image to the z-stack.
     Then, apply the same transformation to segmented FOVs and
     calculated matched planes in each segment.
 
-    Add first minute and last minute movie as well.
     Movie should be out of decrosstalk directory, if multiscope is used.
     Otherwise, it should be from motion correction directory.
     # TODO: Define movie directory based on the rig or operation mode (06/2024)
@@ -94,7 +94,7 @@ def calc_zdrift(movie_dir: Path,
 
     # Get reference z-stack and crop
     # TODO: it should be processed first in the pipeline, and this part of code 
-    # should just retrieve the processed (registered) z-stack
+    # should just retrieve the processed (decrosstalked & registered) z-stack
     ref_zstack = zstack.register_local_z_stack(reference_stack_path)
     ref_zstack_crop = ref_zstack[:, range_y[0]:range_y[1], range_x[0]:range_x[1]]
 
