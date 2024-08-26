@@ -655,7 +655,6 @@ def rolling_average_stack(stack, n_averaging_planes=5):
         rolling average of a z-stack
     """
     stack_rolling = np.zeros_like(stack)
-    n_averaging_planes = 5  # should be in odd number
     n_flanking_planes = (n_averaging_planes - 1) // 2
     for i in range(stack.shape[0]):
         if i < n_flanking_planes:
