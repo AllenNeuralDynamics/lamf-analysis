@@ -2,7 +2,9 @@ import glob
 import json
 import os
 import time
-from multiprocessing import Pool
+# from multiprocessing import Pool
+from dask.distributed import Client
+from dask import delayed, compute
 from pathlib import Path
 from typing import Optional, Tuple, Union
 
@@ -14,7 +16,6 @@ import numpy as np
 import scipy
 import seaborn as sns
 import skimage
-import skimage.exposure
 from PIL import Image, ImageDraw, ImageFont
 from ScanImageTiffReader import ScanImageTiffReader
 from tifffile import TiffFile, imread, imsave
@@ -261,8 +262,8 @@ def register_cortical_stack(zstack_path: Union[Path, str],
     output_dir = output_dir / zstack_name
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # with open(output_dir / 'processing.json', 'w') as f:
-    #     json.dump(output_dict, f, indent=4)
+    with open(output_dir / 'processing.json', 'w') as f:
+        json.dump(output_dict, f, indent=4)
 
     # 6. save registered stacks + gifs
     if save:
@@ -283,15 +284,15 @@ def register_cortical_stack(zstack_path: Union[Path, str],
             reg1_output_path = output_dir_ch / "1x_registered"
             reg1_output_path.mkdir(parents=True, exist_ok=True)
             save_registered_stack(plane_reg_stack, zstack_path, reg1_output_path, n_reg_steps=1)
-            save_gif_with_frame_text(plane_reg_stack, zstack_path, reg1_output_path,
-                                     n_reg_steps=1, duration=duration, title_str=f'{duration}ms')
+            # save_gif_with_frame_text(plane_reg_stack, zstack_path, reg1_output_path,
+            #                          n_reg_steps=1, duration=duration, title_str=f'{duration}ms')
 
             # save full stack
             reg2_output_path = output_dir_ch / "2x_registered"
             reg2_output_path.mkdir(parents=True, exist_ok=True)
             save_registered_stack(full_reg_stack, zstack_path, reg2_output_path, n_reg_steps=2)
-            save_gif_with_frame_text(full_reg_stack, zstack_path, reg2_output_path,
-                                     n_reg_steps=2, duration=duration, title_str=f'{duration}ms')
+            # save_gif_with_frame_text(full_reg_stack, zstack_path, reg2_output_path,
+            #                          n_reg_steps=2, duration=duration, title_str=f'{duration}ms')
 
     # 7. qc_plots
     if qc_plots:
@@ -810,13 +811,13 @@ def save_gif_with_frame_text(reg_stack: np.ndarray,
 
 
 def _reg_single_plane_shift(input):
-    """Small wrapper for averge_reg_plane to be used with Pool.map"""
+    """Small wrapper for averge_reg_plane to be used in parallel processing"""
     plane, shifts = input[0], input[1]
     return average_reg_plane_using_shift_info(np.array(plane), shifts)
 
 
 def _reg_single_plane(frames):
-    """Small wrapper for averge_reg_plane to be used with Pool.map"""
+    """Small wrapper for averge_reg_plane to be used in parallel processing"""
     plane_frames_reg, shifts = average_reg_plane(np.array(frames))
     return plane_frames_reg, shifts
 
@@ -826,7 +827,8 @@ def register_within_plane_multi(stack: np.array,
                                 n_planes: int,
                                 n_repeats_per_plane: int,
                                 shifts: Optional[list] = None,
-                                n_processes: Optional[int] = None):
+                                n_processes: Optional[int] = None,
+                                cpu_buffer: int = 2):
     """"Register each single plane in a z-stack, uses multiprocessing
 
     Dev notes:
@@ -847,6 +849,8 @@ def register_within_plane_multi(stack: np.array,
         Shifts for each plane, If given will use this for registration
     n_processes : int, optional
         Number of processes to use, by default None
+    cpu_buffer : int, optional
+        Buffer for number of processes, by default 2
 
     Returns
     -------
@@ -868,19 +872,27 @@ def register_within_plane_multi(stack: np.array,
     indices_list = np.array(indices_list)
 
     del stack  # save RAM
-    n_processes = n_processes if n_processes is not None else os.cpu_count()
+    n_processes = n_processes if n_processes is not None else os.cpu_count() - cpu_buffer
     if shifts is None:
-        with Pool(n_processes) as p:
-            result = list(tqdm(p.imap(_reg_single_plane, zstack_plane), total=len(zstack_plane)))
-
-        reg_stack = [r[0] for r in result]
-        shifts = [r[1] for r in result]
+        # with Pool(n_processes) as p:
+        #     result = list(tqdm(p.imap(_reg_single_plane, zstack_plane), total=len(zstack_plane)))
+        client = Client()
+        tasks = [delayed(_reg_single_plane)(zstack_plane[i]) for i in range(n_planes)]
+        results = compute(*tasks, num_workers = n_processes)
+        client.close()
+        reg_stack = [r[0] for r in results]
+        shifts = [r[1] for r in results]
         reg_stack = np.array(reg_stack)
     else:
-        input = [(zstack_plane[i], shifts[i]) for i in range(len(zstack_plane))]
-        with Pool(n_processes) as p:
-            result = list(tqdm(p.imap(_reg_single_plane_shift, input), total=len(input)))
-        reg_stack = np.array(result)
+        input_params = [(zstack_plane[i], shifts[i]) for i in range(len(zstack_plane))]
+        # with Pool(n_processes) as p:
+            # result = list(tqdm(p.imap(_reg_single_plane_shift, input_params), total=len(input_params)))
+        client = Client()
+        tasks = [delayed(_reg_single_plane_shift)(input_params[i]) for i in range(n_planes)]
+        results = compute(*tasks, num_workers = n_processes)
+        client.close()
+        
+        reg_stack = np.array(results)
     return reg_stack, shifts
 
 
@@ -982,6 +994,8 @@ def average_reg_plane(images: np.ndarray) -> Union[np.ndarray, list]:
     np.ndarray (2D)
         mean FOV of a plane after registration.
     """
+    import skimage.registration
+    import skimage
     # if num_for_ref is None or num_for_ref < 1:
     #   ref_img = np.mean(images, axis=0)
     ref_img, _ = pick_initial_reference(images)
