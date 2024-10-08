@@ -2,6 +2,7 @@ import glob
 import json
 import os
 import time
+import re
 # from multiprocessing import Pool
 from dask.distributed import Client
 from dask import delayed, compute
@@ -351,10 +352,16 @@ def metadata_from_scanimage_tif(stack_path):
     stack_metadata['num_slices'] = int(si_metadata['SI.hStackManager.actualNumSlices'])
     stack_metadata['num_volumes'] = int(si_metadata['SI.hStackManager.actualNumVolumes'])
     stack_metadata['frames_per_slice'] = int(si_metadata['SI.hStackManager.framesPerSlice'])
-    stack_metadata['z_steps'] = _str_to_int_list(si_metadata['SI.hStackManager.zs'])
+    # stack_metadata['z_steps'] = _str_to_int_list(si_metadata['SI.hStackManager.zs'])
+    stack_metadata['z_steps'] = _str_to_float_list(si_metadata['SI.hStackManager.zs'])
     stack_metadata['actuator'] = si_metadata['SI.hStackManager.stackActuator']
-    stack_metadata['num_channels'] = sum(_str_to_bool_list(si_metadata['SI.hPmts.powersOn']))
-    stack_metadata['z_step_size'] = int(si_metadata['SI.hStackManager.actualStackZStepSize'])
+    # stack_metadata['num_channels'] = sum(_str_to_bool_list(si_metadata['SI.hPmts.powersOn']))
+    channels_saved = [ss for ss in re.split('\[|\]| ', si_metadata['SI.hChannels.channelSave']) if len(ss)>0]
+    channels_saved = [int(cs) for cs in channels_saved if str(int(cs)) == cs]
+    stack_metadata['num_channels'] = len(channels_saved) # TODO: need to check its validity in a larger batch of data
+    stack_metadata['channels_saved'] = channels_saved
+    # stack_metadata['z_step_size'] = int(si_metadata['SI.hStackManager.actualStackZStepSize'])
+    stack_metadata['z_step_size'] = float(si_metadata['SI.hStackManager.actualStackZStepSize'])
 
     return stack_metadata, si_metadata, roi_groups_dict
 
@@ -363,12 +370,66 @@ def metadata_from_scanimage_tif(stack_path):
 # Local zstack
 ####################################################################################################
 
+def _register_stack(stack, total_num_frames, number_of_z_planes):
+    mean_local_zstack_reg = []
+    for plane_ind in range(number_of_z_planes):
+        single_plane_images = stack[range(
+            plane_ind, total_num_frames, number_of_z_planes), ...]
+        single_plane, shifts = average_reg_plane(single_plane_images)
+        mean_local_zstack_reg.append(single_plane)
+
+    # Old Scientifica microscope had flyback and ringing in the first 5 frames
+    # TODO: reimplement for old rigs (4/2024)
+    # if 'CAM2P' in equipment_name:
+    #     mean_local_zstack_reg = mean_local_zstack_reg[5:]
+    _zstack_reg, _shifts_between = reg_between_planes(np.array(mean_local_zstack_reg))
+    return _zstack_reg
+
+
+def register_local_zstack_from_raw_tif(zstack_path: Union[Path, str]):
+    """ Get registered z-stack, both within and between planes
+    From raw tiff stack, meaning that we have to split first
+    
+    Parameters
+    ----------
+    local_z_stack : np.ndarray (3D)
+        Raw local z-stack, tiff file
+
+    Returns
+    -------
+    np.ndarray (3D)
+        within and between plane registered z-stack
+    """
+    stack_metadata, _, _ = metadata_from_scanimage_tif(zstack_path)
+    num_slices = stack_metadata['num_slices']
+    num_volumes = stack_metadata['num_volumes']
+    num_channels = stack_metadata['num_channels'] # TODO: need to check its validity in a larger batch of data
+    channels_saved = stack_metadata['channels_saved']
+
+    cz_reader = ScanImageTiffReader(str(zstack_path))
+    total_num_frames = cz_reader.shape()[0]
+    assert total_num_frames == num_slices * num_volumes * num_channels
+
+    data = cz_reader.data()
+    if num_channels == 1:
+        zstack_reg = _register_stack(data, total_num_frames, num_slices)
+    elif num_channels > 0:
+        zstack_reg = []
+        total_num_frames_each_channel = total_num_frames // num_channels
+        for ch_ind in range(len(channels_saved)):
+            zstack_reg.append(_register_stack(data[ch_ind::num_channels], 
+                              total_num_frames_each_channel, num_slices))
+    else:
+        raise ValueError("num_channels should be 1 or more")
+
+    return zstack_reg, channels_saved
+
 
 def register_local_z_stack(zstack_path):
     """Get registered z-stack, both within and between planes
 
     Works for step and loop protocol?
-    TODO: check if it also works for loop protocol,after fixing the
+    TODO: check if it also works for loop protocol, after fixing the
     rolling effect (JK 2023)
 
     Parameters
@@ -383,9 +444,10 @@ def register_local_z_stack(zstack_path):
     """
     try:
         # TODO: metadata missing from old files? (04/2024)
-        si, roi_groups = local_zstack_metadata(zstack_path)
-        number_of_z_planes = si['SI.hStackManager.actualNumSlices']
-        number_of_repeats = si['SI.hStackManager.actualNumVolumes']
+        si_metadata, roi_groups = local_zstack_metadata(zstack_path)
+        number_of_z_planes= int(si_metadata['SI.hStackManager.actualNumSlices'])
+        number_of_repeats = int(si_metadata['SI.hStackManager.actualNumVolumes'])
+
         # z_step_size = si['SI.hStackManager.actualStackZStepSize']
     except ValueError as e:
         number_of_z_planes = 81
@@ -415,6 +477,7 @@ def register_local_z_stack(zstack_path):
     return zstack_reg
 
 
+# TODO: remove if not used
 def local_zstack_metadata(zstack_path: Union[Path, str]) -> tuple:
     """Get scanimage metadata and ROI groups from a local z-stack
 
@@ -636,6 +699,8 @@ def _extract_dict_from_si_string(string):
 def _str_to_int_list(string):
     return [int(s) for s in string.strip('[]').split()]
 
+def _str_to_float_list(string):
+    return [float(s) for s in string.strip('[]').split()]
 
 def _str_to_bool_list(string):
     return [bool(s) for s in string.strip('[]').split()]
