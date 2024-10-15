@@ -256,7 +256,7 @@ def plot_contours_overlap_two_masks(mask1: np.ndarray,
     return ax
 
 
-def plot_contour_and_projections(rois_list, img, mask_key="mask_matrix", save=True, output_folder=None,
+def plot_contour_and_projections(rois_table, img, mask_key="mask_matrix", save=True, output_folder=None,
                                  fn=None, color_labels=None,ax=None, filter_ids=None):
     
     if fn is None:
@@ -268,14 +268,14 @@ def plot_contour_and_projections(rois_list, img, mask_key="mask_matrix", save=Tr
     vmax = np.percentile(img, 99.6)
     ax.imshow(img, vmax=vmax, cmap=plt.cm.gray)
 
-    for roi in rois_list:
+    for i, roi in rois_table.iterrows():
         x = roi['x']
         y = roi['y']
         mask =  np.array(roi[mask_key])
         pad = 5
         mask = np.pad(mask, pad, mode='constant', constant_values=0) # pad mask so contour works on edge
         contours = measure.find_contours(mask, 0.5)
-        roi_id = roi['id']
+        roi_id = roi['cell_roi_id']
 
         if filter_ids is not None:
             if roi_id not in filter_ids:
