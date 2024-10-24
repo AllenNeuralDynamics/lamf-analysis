@@ -125,7 +125,7 @@ def register_cortical_stack(zstack_path: Union[Path, str],
                             qc_plots: bool = False,
                             stack_metadata: Optional[dict] = None,
                             reference_plane: Optional[int] = 60,
-                            ref_channel: Optional[int] = 1):
+                            ref_channel: Optional[int] = None):
     """Two-step registration of a cortical z-stack up to two channels
 
     Dev notes
@@ -158,8 +158,8 @@ def register_cortical_stack(zstack_path: Union[Path, str],
         Reference plane for between plane registration, by default 60
         Nice to be in the middle of the stack, avoiding top junk
     ref_channel : int, optional
-        Reference channel for registration in case of multi-channel stack, by default 1
-        (often red or static channel)
+        Reference channel for registration in case of multi-channel stack, by default None
+        (within-channel registration)
 
     """
     start_time = time.time()
@@ -220,12 +220,20 @@ def register_cortical_stack(zstack_path: Union[Path, str],
                                       n_repeats_per_plane, ref_channel,
                                       reg_ops)
         reg_dict_ref['channel'] = ref_channel
+        reg_dict_ref['ref_channel'] = ref_channel
         reg_dicts.append(reg_dict_ref)
 
     # 3B. Two Channel
     elif stack_metadata['num_channels'] == 2:
-        target_channel = [i for i in range(stack_metadata['num_channels']) if i != ref_channel][0]
-        print(f"Found num_channels = {stack_metadata['num_channels']}, ref_channel = {ref_channel}")
+        has_ref = True
+        if ref_channel is None:
+            target_channel = 0 # arbitrary assignment
+            print(f"Found num_channels = {stack_metadata['num_channels']}, ref_channel = {ref_channel}")
+            ref_channel = 1
+            has_ref = False
+        else:
+            target_channel = [i for i in range(stack_metadata['num_channels']) if i != ref_channel][0]
+            print(f"Found num_channels = {stack_metadata['num_channels']}, ref_channel = {ref_channel}")
 
         # reference
         stack_ref, stack_target = deinterleave_channels(stack, stack_metadata['num_channels'],
@@ -234,15 +242,24 @@ def register_cortical_stack(zstack_path: Union[Path, str],
                                       n_repeats_per_plane, ref_channel,
                                       reg_ops)
         reg_dict_ref['channel'] = ref_channel
+        reg_dict_ref['ref_channel'] = ref_channel
         reg_dicts.append(reg_dict_ref)
 
         # target
-        reg_dict_target = get_zstack_reg_using_shifts(stack_target, plane_order, n_planes,
-                                                      n_repeats_per_plane,
-                                                      reg_dict_ref['shifts_within'],
-                                                      reg_dict_ref['shifts_between'],
-                                                      target_channel)
-        reg_dict_target['channel'] = target_channel
+        if has_ref:
+            reg_dict_target = get_zstack_reg_using_shifts(stack_target, plane_order, n_planes,
+                                                        n_repeats_per_plane,
+                                                        reg_dict_ref['shifts_within'],
+                                                        reg_dict_ref['shifts_between'],
+                                                        target_channel)
+            reg_dict_target['channel'] = target_channel
+            reg_dict_target['ref_channel'] = ref_channel
+        else:
+            reg_dict_ref = get_zstack_reg(stack_ref, plane_order, n_planes,
+                                      n_repeats_per_plane, target_channel,
+                                      reg_ops)
+            reg_dict_target['channel'] = target_channel
+            reg_dict_target['ref_channel'] = target_channel
         reg_dicts.append(reg_dict_target)
 
     # 5. gather processing json
