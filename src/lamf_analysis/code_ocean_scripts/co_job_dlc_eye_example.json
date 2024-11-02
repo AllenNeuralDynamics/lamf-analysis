@@ -1,0 +1,6 @@
+// {
+//     "capsule_id": "your-capsule-id",
+//     "tags": ["tag1", "tag2"],
+//     "process_name_suffix": "suffix",
+//     "assets_list": ["asset-id-1", "asset-id-2"]
+// }
