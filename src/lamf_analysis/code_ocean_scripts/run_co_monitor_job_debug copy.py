@@ -1,3 +1,27 @@
+# using pydantic serialization inherent to PipelineMonitorSettings
+# added named parameters as list of NamedRunParam
+# batches are defined in the config file as a list of settings
+#
+# Example config:
+# {
+#     "settings_list": [
+#         {
+#             "capsule_id": "capsule1",
+#             "tags": ["tag1", "tag2"],
+#             "process_name_suffix": "suffix1",
+#             "data_assets": [{"id": "asset1", "mount": "mount1"}],
+#             "named_parameters": {"param1": "value1"}
+#         },
+#         {
+#             "capsule_id": "capsule2",
+#             "tags": ["tag3", "tag4"],
+#             "process_name_suffix": "suffix2",
+#             "data_assets": [{"id": "asset2", "mount": "mount2"}],
+#             "named_parameters": {"param2": "value2"}
+#         }
+#     ]
+# }
+
 from aind_codeocean_pipeline_monitor.job import PipelineMonitorJob
 from aind_codeocean_pipeline_monitor.models import (
     CaptureSettings,
@@ -5,7 +29,7 @@ from aind_codeocean_pipeline_monitor.models import (
 )
 from codeocean.capsule import Capsules
 from codeocean.data_asset import DataAssets
-from codeocean.computation import Computations, DataAssetsRunParam, RunParams
+from codeocean.computation import Computations, DataAssetsRunParam, RunParams, NamedRunParam
 from codeocean import CodeOcean
 import argparse
 import logging
@@ -21,7 +45,7 @@ from multiprocessing import Pool
 
 def setup_logging():
     """Configure logging with timestamp in filename"""
-    log_file = f"run_co_monitor_job_parallel_{time.strftime('%Y%m%d_%H%M%S')}.log"
+    log_file = f"{os.path.basename(__file__)}_{time.strftime('%Y%m%d_%H%M%S')}.log"
 
     # Configure both file and console handlers
     logging.basicConfig(
@@ -69,27 +93,33 @@ def load_json_config(config_path):
     try:
         with open(config_path, 'r') as f:
             config = json.load(f)
-
-            # Create settings object directly from JSON
-            settings = PipelineMonitorSettings.model_validate(
-                {
-                    "run_params": {
-                        "capsule_id": config['capsule_id'],
-                        "data_assets": [
-                            DataAssetsRunParam(
-                                id=asset['id'],
-                                mount=asset['mount']
-                            ) for batch in config['assets_list']
-                            for asset in batch
-                        ]
-                    },
-                    "capture_settings": CaptureSettings(
-                        tags=config['tags'],
-                        process_name_suffix=config['process_name_suffix']
-                    )
-                }
-            )
-            return settings
+  
+            # Create a list of settings from the config
+            settings_list = []
+            for setting in config['settings_list']:
+                batch_settings = PipelineMonitorSettings.model_validate(
+                    {
+                        "run_params": {
+                            "capsule_id": setting['capsule_id'],
+                            "data_assets": [
+                                DataAssetsRunParam(
+                                    id=asset['id'],
+                                    mount=asset['mount']
+                                ) for asset in setting['assets_list']
+                            ],
+                            "named_parameters": [
+                                NamedRunParam(param_name=key, value=value)
+                                for key, value in setting['named_parameters'].items()
+                            ]
+                        },
+                        "capture_settings": CaptureSettings(
+                            tags=setting['tags'],
+                            process_name_suffix=setting['process_name_suffix']
+                        )
+                    }
+                )
+                settings_list.append(batch_settings)
+            return settings_list
     except FileNotFoundError:
         logging.error(f"Config file not found: {config_path}")
         sys.exit(1)
@@ -129,6 +159,9 @@ def run_single_job(settings_dict):
         # Deserialize settings
         settings = PipelineMonitorSettings.model_validate_json(settings_dict)
 
+        # Add debug logging
+        logging.info(f"Settings payload: {settings.model_dump_json(indent=2)}")
+
         job = PipelineMonitorJob(job_settings=settings, client=client)
         asset_mount = settings.run_params.data_assets[0].mount
         logging.info(f"Starting job for asset {asset_mount}")
@@ -140,25 +173,18 @@ def run_single_job(settings_dict):
 
 def run_monitor_job(config_path, max_processes=None):
     """Main function to run the monitor jobs in parallel"""
-    # Load full settings
-    settings = load_json_config(config_path)
-    
+    # Load settings list (one per batch)
+    settings_list = load_json_config(config_path)
+
     if max_processes is None:
         max_processes = multiprocessing.cpu_count() * 2
 
     logging.info(f"Running with maximum {max_processes} concurrent processes")
 
-    # Create individual settings for each asset
-    job_settings_list = []
-    for asset in settings.run_params.data_assets:
-        single_asset_settings = PipelineMonitorSettings(
-            run_params=RunParams(
-                capsule_id=settings.run_params.capsule_id,
-                data_assets=[asset]
-            ),
-            capture_settings=settings.capture_settings
-        )
-        job_settings_list.append(single_asset_settings.model_dump_json())
+    # Create job settings JSON for each batch
+    job_settings_list = [
+        settings.model_dump_json() for settings in settings_list
+    ]
 
     # Create process pool and submit jobs with delay
     with Pool(processes=max_processes) as pool:

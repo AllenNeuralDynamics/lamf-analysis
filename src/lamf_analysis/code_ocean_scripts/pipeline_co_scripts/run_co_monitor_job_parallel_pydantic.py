@@ -1,27 +1,3 @@
-# using pydantic serialization inherent to PipelineMonitorSettings
-# added named parameters as list of NamedRunParam
-# batches are defined in the config file as a list of settings
-#
-# Example config:
-# {
-#     "settings_list": [
-#         {
-#             "capsule_id": "capsule1",
-#             "tags": ["tag1", "tag2"],
-#             "process_name_suffix": "suffix1",
-#             "data_assets": [{"id": "asset1", "mount": "mount1"}],
-#             "named_parameters": {"param1": "value1"}
-#         },
-#         {
-#             "capsule_id": "capsule2",
-#             "tags": ["tag3", "tag4"],
-#             "process_name_suffix": "suffix2",
-#             "data_assets": [{"id": "asset2", "mount": "mount2"}],
-#             "named_parameters": {"param2": "value2"}
-#         }
-#     ]
-# }
-
 from aind_codeocean_pipeline_monitor.job import PipelineMonitorJob
 from aind_codeocean_pipeline_monitor.models import (
     CaptureSettings,
@@ -41,12 +17,11 @@ from urllib3.util import Retry
 from requests.adapters import HTTPAdapter
 import multiprocessing
 from multiprocessing import Pool
-from typing import List
 
 
 def setup_logging():
     """Configure logging with timestamp in filename"""
-    log_file = f"{os.path.basename(__file__)}_{time.strftime('%Y%m%d_%H%M%S')}.log"
+    log_file = f"run_co_monitor_job_parallel_{time.strftime('%Y%m%d_%H%M%S')}.log"
 
     # Configure both file and console handlers
     logging.basicConfig(
@@ -94,28 +69,25 @@ def load_json_config(config_path):
     try:
         with open(config_path, 'r') as f:
             config = json.load(f)
-  
-            # Create a list of settings from the config
+            
+            # Create a list of settings, one for each batch
             settings_list = []
-            for setting in config['settings_list']:
+            for batch in config['assets_list']:
                 batch_settings = PipelineMonitorSettings.model_validate(
                     {
                         "run_params": {
-                            "capsule_id": setting['capsule_id'],
-                            "data_assets": [
-                                DataAssetsRunParam(
-                                    id=asset['id'],
-                                    mount=asset['mount']
-                                ) for asset in setting['assets_list']
-                            ],
-                            "named_parameters": [
-                                NamedRunParam(param_name=key, value=value)
-                                for key, value in setting['named_parameters'].items()
-                            ]
+                            "capsule_id": config['capsule_id'],
+                            # "data_assets": [
+                            #     DataAssetsRunParam(
+                            #         id=asset['id'],
+                            #         mount=asset['mount']
+                            #     ) for asset in batch
+                            # ]
+                            "data_assets": batch
                         },
                         "capture_settings": CaptureSettings(
-                            tags=setting['tags'],
-                            process_name_suffix=setting['process_name_suffix']
+                            tags=config['tags'],
+                            process_name_suffix=config['process_name_suffix']
                         )
                     }
                 )
@@ -151,44 +123,54 @@ def parse_args():
     return parser.parse_args()
 
 
-def run_single_job(settings_json: str):
-    """Run a single monitor job for one data asset
-    
-    Parameters
-    ----------
-    settings_json : str
-        JSON string containing the job settings
-    """
+def run_single_job(settings_dict):
+    """Run a single monitor job for one data asset"""
     try:
         # Create new client for each process
         client = setup_codeocean_client()
 
-        # Parse JSON string to PipelineMonitorSettings
-        settings = PipelineMonitorSettings.model_validate_json(settings_json)
-        
-        # Debug logging
-        logging.info(f"Parsed settings: {settings.model_dump_json(indent=2)}")
+        # Deserialize settings
+        settings = PipelineMonitorSettings.model_validate_json(settings_dict)
 
-        # Create and run job
         job = PipelineMonitorJob(job_settings=settings, client=client)
+        asset_mount = settings.run_params.data_assets[0].mount
+        logging.info(f"Starting job for asset {asset_mount}")
         job.run_job()
-        
+        logging.info(f"Completed job for asset {asset_mount}")
     except Exception as e:
-        logging.error(f"Error in process: {str(e)}")
-        logging.error(f"Failed settings JSON: {settings_json}")
-        raise  # Re-raise the exception for the caller to handle
+        logging.error(f"Error in process for asset {settings.run_params.data_assets[0].mount}: {e}")
 
 
-def run_jobs(settings_list: List[str]):
-    """Run multiple jobs from settings JSON strings"""
-    setup_logging()
-    
-    for settings_json in settings_list:
-        try:
-            run_single_job(settings_json)
-        except Exception as e:
-            logging.error(f"Job failed: {str(e)}")
-            continue
+def run_monitor_job(config_path, max_processes=None):
+    """Main function to run the monitor jobs in parallel"""
+    # Load settings list (one per batch)
+    settings_list = load_json_config(config_path)
+
+    if max_processes is None:
+        max_processes = multiprocessing.cpu_count() * 2
+
+    logging.info(f"Running with maximum {max_processes} concurrent processes")
+
+    # Create job settings JSON for each batch
+    job_settings_list = [
+        settings.model_dump_json() for settings in settings_list
+    ]
+
+    # Create process pool and submit jobs with delay
+    with Pool(processes=max_processes) as pool:
+        results = []
+        for settings_json in job_settings_list:
+            if results:
+                time.sleep(30)
+
+            logging.info(f"Submitting new job")
+            result = pool.apply_async(run_single_job, (settings_json,))
+            results.append(result)
+
+        for result in results:
+            result.get()
+
+    logging.info("All processes completed")
 
 
 def main():
@@ -196,7 +178,7 @@ def main():
     try:
         args = parse_args()
         setup_logging()
-        run_jobs(args.config)
+        run_monitor_job(args.config)
 
     except Exception as e:
         logging.error(f"An error occurred: {e}")

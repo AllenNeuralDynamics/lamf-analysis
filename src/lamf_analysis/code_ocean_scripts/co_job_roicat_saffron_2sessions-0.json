@@ -1,0 +1,26 @@
+{
+    "capsule_id": "71e4e9aa-9b28-4071-b0f2-6dcb9ad74a1e",
+    "tags": [
+        "session-matching",
+        "multiplane-ophys",
+        "derived"
+    ],
+    "process_name_suffix": "session-matching",
+    "assets_list": [
+        [
+            {
+                "id": "d4fb3bf1-9dfe-492b-b4d6-e5e2dd3b0537",
+                "mount": "multiplane-ophys_721291_2024-05-08_08-05-54_processed_2024-10-22_17-36-42"
+            },
+            {
+                "id": "f9feae45-821a-4c56-ba06-d2e9f013b5cd",
+                "mount": "multiplane-ophys_721291_2024-05-13_08-27-23_processed_2024-10-04_09-05-53"
+            }
+        ]
+    ],
+    "named_parameters": {
+        "geometric-method": "RoMa",
+        "nonrigid-method": "RoMa",
+        "all-to-all": "on"
+    }
+}
