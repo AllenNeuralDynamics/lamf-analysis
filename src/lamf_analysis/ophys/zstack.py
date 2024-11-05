@@ -255,7 +255,7 @@ def register_cortical_stack(zstack_path: Union[Path, str],
             reg_dict_target['channel'] = target_channel
             reg_dict_target['ref_channel'] = ref_channel
         else:
-            reg_dict_ref = get_zstack_reg(stack_ref, plane_order, n_planes,
+            reg_dict_target = get_zstack_reg(stack_ref, plane_order, n_planes,
                                       n_repeats_per_plane, target_channel,
                                       reg_ops)
             reg_dict_target['channel'] = target_channel
