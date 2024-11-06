@@ -378,11 +378,11 @@ def decrosstalk_zstack(raw_path, processed_path, opid, paired_opid):
     plane_path = processed_path / str(opid)
 
     # get local z-stack fn
-    # TODO: Use file paths information
-    local_zstack_fn = raw_path / 'ophys' / f'ophys_experiment_{opid}' / f'{opid}_z_stack_local.h5'
+    # TODO: Use file paths information    
+    local_zstack_fn = raw_path / 'pophys' / f'ophys_experiment_{opid}' / f'{opid}_z_stack_local.h5'
     # get paired z-stack fn
     # TODO: Use file paths information
-    paired_zstack_fn = raw_path / 'ophys' / f'ophys_experiment_{paired_opid}' / f'{paired_opid}_z_stack_local.h5'
+    paired_zstack_fn = raw_path / 'pophys' / f'ophys_experiment_{paired_opid}' / f'{paired_opid}_z_stack_local.h5'
 
     # Decrosstalk using alpha and beta from the opid
     json_fn = plane_path / 'decrosstalk/processing.json'
