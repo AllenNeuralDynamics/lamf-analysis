@@ -2,7 +2,10 @@ import glob
 import json
 import os
 import time
-from multiprocessing import Pool
+import re
+# from multiprocessing import Pool
+from dask.distributed import Client
+from dask import delayed, compute
 from pathlib import Path
 from typing import Optional, Tuple, Union
 
@@ -14,7 +17,6 @@ import numpy as np
 import scipy
 import seaborn as sns
 import skimage
-import skimage.exposure
 from PIL import Image, ImageDraw, ImageFont
 from tifffile import read_scanimage_metadata
 from tifffile import TiffFile, imread, imsave
@@ -123,7 +125,7 @@ def register_cortical_stack(zstack_path: Union[Path, str],
                             qc_plots: bool = False,
                             stack_metadata: Optional[dict] = None,
                             reference_plane: Optional[int] = 60,
-                            ref_channel: Optional[int] = 1):
+                            ref_channel: Optional[int] = None):
     """Two-step registration of a cortical z-stack up to two channels
 
     Dev notes
@@ -156,8 +158,8 @@ def register_cortical_stack(zstack_path: Union[Path, str],
         Reference plane for between plane registration, by default 60
         Nice to be in the middle of the stack, avoiding top junk
     ref_channel : int, optional
-        Reference channel for registration in case of multi-channel stack, by default 1
-        (often red or static channel)
+        Reference channel for registration in case of multi-channel stack, by default None
+        (within-channel registration)
 
     """
     start_time = time.time()
@@ -218,12 +220,20 @@ def register_cortical_stack(zstack_path: Union[Path, str],
                                       n_repeats_per_plane, ref_channel,
                                       reg_ops)
         reg_dict_ref['channel'] = ref_channel
+        reg_dict_ref['ref_channel'] = ref_channel
         reg_dicts.append(reg_dict_ref)
 
     # 3B. Two Channel
     elif stack_metadata['num_channels'] == 2:
-        target_channel = [i for i in range(stack_metadata['num_channels']) if i != ref_channel][0]
-        print(f"Found num_channels = {stack_metadata['num_channels']}, ref_channel = {ref_channel}")
+        has_ref = True
+        if ref_channel is None:
+            target_channel = 0 # arbitrary assignment
+            print(f"Found num_channels = {stack_metadata['num_channels']}, ref_channel = {ref_channel}")
+            ref_channel = 1
+            has_ref = False
+        else:
+            target_channel = [i for i in range(stack_metadata['num_channels']) if i != ref_channel][0]
+            print(f"Found num_channels = {stack_metadata['num_channels']}, ref_channel = {ref_channel}")
 
         # reference
         stack_ref, stack_target = deinterleave_channels(stack, stack_metadata['num_channels'],
@@ -232,15 +242,24 @@ def register_cortical_stack(zstack_path: Union[Path, str],
                                       n_repeats_per_plane, ref_channel,
                                       reg_ops)
         reg_dict_ref['channel'] = ref_channel
+        reg_dict_ref['ref_channel'] = ref_channel
         reg_dicts.append(reg_dict_ref)
 
         # target
-        reg_dict_target = get_zstack_reg_using_shifts(stack_target, plane_order, n_planes,
-                                                      n_repeats_per_plane,
-                                                      reg_dict_ref['shifts_within'],
-                                                      reg_dict_ref['shifts_between'],
-                                                      target_channel)
-        reg_dict_target['channel'] = target_channel
+        if has_ref:
+            reg_dict_target = get_zstack_reg_using_shifts(stack_target, plane_order, n_planes,
+                                                        n_repeats_per_plane,
+                                                        reg_dict_ref['shifts_within'],
+                                                        reg_dict_ref['shifts_between'],
+                                                        target_channel)
+            reg_dict_target['channel'] = target_channel
+            reg_dict_target['ref_channel'] = ref_channel
+        else:
+            reg_dict_target = get_zstack_reg(stack_ref, plane_order, n_planes,
+                                      n_repeats_per_plane, target_channel,
+                                      reg_ops)
+            reg_dict_target['channel'] = target_channel
+            reg_dict_target['ref_channel'] = target_channel
         reg_dicts.append(reg_dict_target)
 
     # 5. gather processing json
@@ -261,8 +280,8 @@ def register_cortical_stack(zstack_path: Union[Path, str],
     output_dir = output_dir / zstack_name
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # with open(output_dir / 'processing.json', 'w') as f:
-    #     json.dump(output_dict, f, indent=4)
+    with open(output_dir / 'processing.json', 'w') as f:
+        json.dump(output_dict, f, indent=4)
 
     # 6. save registered stacks + gifs
     if save:
@@ -283,15 +302,15 @@ def register_cortical_stack(zstack_path: Union[Path, str],
             reg1_output_path = output_dir_ch / "1x_registered"
             reg1_output_path.mkdir(parents=True, exist_ok=True)
             save_registered_stack(plane_reg_stack, zstack_path, reg1_output_path, n_reg_steps=1)
-            save_gif_with_frame_text(plane_reg_stack, zstack_path, reg1_output_path,
-                                     n_reg_steps=1, duration=duration, title_str=f'{duration}ms')
+            # save_gif_with_frame_text(plane_reg_stack, zstack_path, reg1_output_path,
+            #                          n_reg_steps=1, duration=duration, title_str=f'{duration}ms')
 
             # save full stack
             reg2_output_path = output_dir_ch / "2x_registered"
             reg2_output_path.mkdir(parents=True, exist_ok=True)
             save_registered_stack(full_reg_stack, zstack_path, reg2_output_path, n_reg_steps=2)
-            save_gif_with_frame_text(full_reg_stack, zstack_path, reg2_output_path,
-                                     n_reg_steps=2, duration=duration, title_str=f'{duration}ms')
+            # save_gif_with_frame_text(full_reg_stack, zstack_path, reg2_output_path,
+            #                          n_reg_steps=2, duration=duration, title_str=f'{duration}ms')
 
     # 7. qc_plots
     if qc_plots:
@@ -333,21 +352,33 @@ def metadata_from_scanimage_tif(stack_path):
     dict
         roi_groups_dict: 
     """
-    with open(stack_path, 'rb') as fh:
-        metadata = read_scanimage_metadata(fh)
+    with ScanImageTiffReader(str(stack_path)) as reader:
+        md_string = reader.metadata()
+
+    # split si & roi groups, prep for seprate parse
+    s = md_string.split("\n{")
+    rg_str = "{" + s[1]
+    si_str = s[0]
+
+    # parse 1: extract keys and values, dump, then load again
+    si_metadata = _extract_dict_from_si_string(si_str)
+    # parse 2: json loads works hurray
+    roi_groups_dict = json.loads(rg_str)
 
     stack_metadata = {}
-    stack_metadata['num_slices'] = int(metadata[0]['SI.hStackManager.actualNumSlices'])
-    stack_metadata['num_volumes'] = int(metadata[0]['SI.hStackManager.actualNumVolumes'])
-    stack_metadata['frames_per_slice'] = int(metadata[0]['SI.hStackManager.framesPerSlice'])
-    stack_metadata['z_steps'] = metadata[0]['SI.hStackManager.zs']
-    stack_metadata['actuator'] = metadata[0]['SI.hStackManager.stackActuator']
-    stack_metadata['num_channels'] = sum((metadata[0]['SI.hPmts.powersOn']))
-    stack_metadata['z_step_size'] = int(metadata[0]['SI.hStackManager.actualStackZStepSize'])  
-
-    roi_groups_dict = metadata[1]
-
-    si_metadata = metadata[0]
+    stack_metadata['num_slices'] = int(si_metadata['SI.hStackManager.actualNumSlices'])
+    stack_metadata['num_volumes'] = int(si_metadata['SI.hStackManager.actualNumVolumes'])
+    stack_metadata['frames_per_slice'] = int(si_metadata['SI.hStackManager.framesPerSlice'])
+    # stack_metadata['z_steps'] = _str_to_int_list(si_metadata['SI.hStackManager.zs'])
+    stack_metadata['z_steps'] = _str_to_float_list(si_metadata['SI.hStackManager.zs'])
+    stack_metadata['actuator'] = si_metadata['SI.hStackManager.stackActuator']
+    # stack_metadata['num_channels'] = sum(_str_to_bool_list(si_metadata['SI.hPmts.powersOn']))
+    channels_saved = [ss for ss in re.split('\[|\]| ', si_metadata['SI.hChannels.channelSave']) if len(ss)>0]
+    channels_saved = [int(cs) for cs in channels_saved if str(int(cs)) == cs]
+    stack_metadata['num_channels'] = len(channels_saved) # TODO: need to check its validity in a larger batch of data
+    stack_metadata['channels_saved'] = channels_saved
+    # stack_metadata['z_step_size'] = int(si_metadata['SI.hStackManager.actualStackZStepSize'])
+    stack_metadata['z_step_size'] = float(si_metadata['SI.hStackManager.actualStackZStepSize'])
 
     return stack_metadata, si_metadata, roi_groups_dict
 
@@ -355,6 +386,60 @@ def metadata_from_scanimage_tif(stack_path):
 ####################################################################################################
 # Local zstack
 ####################################################################################################
+
+def _register_stack(stack, total_num_frames, number_of_z_planes):
+    mean_local_zstack_reg = []
+    for plane_ind in range(number_of_z_planes):
+        single_plane_images = stack[range(
+            plane_ind, total_num_frames, number_of_z_planes), ...]
+        single_plane, shifts = average_reg_plane(single_plane_images)
+        mean_local_zstack_reg.append(single_plane)
+
+    # Old Scientifica microscope had flyback and ringing in the first 5 frames
+    # TODO: reimplement for old rigs (4/2024)
+    # if 'CAM2P' in equipment_name:
+    #     mean_local_zstack_reg = mean_local_zstack_reg[5:]
+    _zstack_reg, _shifts_between = reg_between_planes(np.array(mean_local_zstack_reg))
+    return _zstack_reg
+
+
+def register_local_zstack_from_raw_tif(zstack_path: Union[Path, str]):
+    """ Get registered z-stack, both within and between planes
+    From raw tiff stack, meaning that we have to split first
+    
+    Parameters
+    ----------
+    local_z_stack : np.ndarray (3D)
+        Raw local z-stack, tiff file
+
+    Returns
+    -------
+    np.ndarray (3D)
+        within and between plane registered z-stack
+    """
+    stack_metadata, _, _ = metadata_from_scanimage_tif(zstack_path)
+    num_slices = stack_metadata['num_slices']
+    num_volumes = stack_metadata['num_volumes']
+    num_channels = stack_metadata['num_channels'] # TODO: need to check its validity in a larger batch of data
+    channels_saved = stack_metadata['channels_saved']
+
+    cz_reader = ScanImageTiffReader(str(zstack_path))
+    total_num_frames = cz_reader.shape()[0]
+    assert total_num_frames == num_slices * num_volumes * num_channels
+
+    data = cz_reader.data()
+    if num_channels == 1:
+        zstack_reg = _register_stack(data, total_num_frames, num_slices)
+    elif num_channels > 0:
+        zstack_reg = []
+        total_num_frames_each_channel = total_num_frames // num_channels
+        for ch_ind in range(len(channels_saved)):
+            zstack_reg.append(_register_stack(data[ch_ind::num_channels], 
+                              total_num_frames_each_channel, num_slices))
+    else:
+        raise ValueError("num_channels should be 1 or more")
+
+    return zstack_reg, channels_saved
 
 def decrosstalk_zstack(raw_path, processed_path, opid, paired_opid):
     ''' Decrosstalk a local z-stack using the alpha and beta values from the processing json file
@@ -369,6 +454,7 @@ def decrosstalk_zstack(raw_path, processed_path, opid, paired_opid):
         Ophys plane ID
     paired_opid : int
         Ophys plane ID of the paired plane
+
 
     Returns
     -------
@@ -446,7 +532,7 @@ def register_local_z_stack(zstack_path, local_z_stack=None):
     """Get registered z-stack, both within and between planes
 
     Works for step and loop protocol?
-    TODO: check if it also works for loop protocol,after fixing the
+    TODO: check if it also works for loop protocol, after fixing the
     rolling effect (JK 2023)
 
     Parameters
@@ -464,9 +550,10 @@ def register_local_z_stack(zstack_path, local_z_stack=None):
     """
     try:
         # TODO: metadata missing from old files? (04/2024)
-        si, roi_groups = local_zstack_metadata(zstack_path)
-        number_of_z_planes = si['SI.hStackManager.actualNumSlices']
-        number_of_repeats = si['SI.hStackManager.actualNumVolumes']
+        si_metadata, roi_groups = local_zstack_metadata(zstack_path)
+        number_of_z_planes= int(si_metadata['SI.hStackManager.actualNumSlices'])
+        number_of_repeats = int(si_metadata['SI.hStackManager.actualNumVolumes'])
+
         # z_step_size = si['SI.hStackManager.actualStackZStepSize']
     except ValueError as e:
         number_of_z_planes = 81
@@ -497,6 +584,7 @@ def register_local_z_stack(zstack_path, local_z_stack=None):
     return zstack_reg
 
 
+# TODO: remove if not used
 def local_zstack_metadata(zstack_path: Union[Path, str]) -> tuple:
     """Get scanimage metadata and ROI groups from a local z-stack
 
@@ -717,6 +805,8 @@ def _extract_dict_from_si_string(string):
 def _str_to_int_list(string):
     return [int(s) for s in string.strip('[]').split()]
 
+def _str_to_float_list(string):
+    return [float(s) for s in string.strip('[]').split()]
 
 def _str_to_bool_list(string):
     return [bool(s) for s in string.strip('[]').split()]
@@ -892,13 +982,13 @@ def save_gif_with_frame_text(reg_stack: np.ndarray,
 
 
 def _reg_single_plane_shift(input):
-    """Small wrapper for averge_reg_plane to be used with Pool.map"""
+    """Small wrapper for averge_reg_plane to be used in parallel processing"""
     plane, shifts = input[0], input[1]
     return average_reg_plane_using_shift_info(np.array(plane), shifts)
 
 
 def _reg_single_plane(frames):
-    """Small wrapper for averge_reg_plane to be used with Pool.map"""
+    """Small wrapper for averge_reg_plane to be used in parallel processing"""
     plane_frames_reg, shifts = average_reg_plane(np.array(frames))
     return plane_frames_reg, shifts
 
@@ -908,7 +998,8 @@ def register_within_plane_multi(stack: np.array,
                                 n_planes: int,
                                 n_repeats_per_plane: int,
                                 shifts: Optional[list] = None,
-                                n_processes: Optional[int] = None):
+                                n_processes: Optional[int] = None,
+                                cpu_buffer: int = 2):
     """"Register each single plane in a z-stack, uses multiprocessing
 
     Dev notes:
@@ -929,6 +1020,8 @@ def register_within_plane_multi(stack: np.array,
         Shifts for each plane, If given will use this for registration
     n_processes : int, optional
         Number of processes to use, by default None
+    cpu_buffer : int, optional
+        Buffer for number of processes, by default 2
 
     Returns
     -------
@@ -950,19 +1043,27 @@ def register_within_plane_multi(stack: np.array,
     indices_list = np.array(indices_list)
 
     del stack  # save RAM
-    n_processes = n_processes if n_processes is not None else os.cpu_count()
+    n_processes = n_processes if n_processes is not None else os.cpu_count() - cpu_buffer
     if shifts is None:
-        with Pool(n_processes) as p:
-            result = list(tqdm(p.imap(_reg_single_plane, zstack_plane), total=len(zstack_plane)))
-
-        reg_stack = [r[0] for r in result]
-        shifts = [r[1] for r in result]
+        # with Pool(n_processes) as p:
+        #     result = list(tqdm(p.imap(_reg_single_plane, zstack_plane), total=len(zstack_plane)))
+        client = Client()
+        tasks = [delayed(_reg_single_plane)(zstack_plane[i]) for i in range(n_planes)]
+        results = compute(*tasks, num_workers = n_processes)
+        client.close()
+        reg_stack = [r[0] for r in results]
+        shifts = [r[1] for r in results]
         reg_stack = np.array(reg_stack)
     else:
-        input = [(zstack_plane[i], shifts[i]) for i in range(len(zstack_plane))]
-        with Pool(n_processes) as p:
-            result = list(tqdm(p.imap(_reg_single_plane_shift, input), total=len(input)))
-        reg_stack = np.array(result)
+        input_params = [(zstack_plane[i], shifts[i]) for i in range(len(zstack_plane))]
+        # with Pool(n_processes) as p:
+            # result = list(tqdm(p.imap(_reg_single_plane_shift, input_params), total=len(input_params)))
+        client = Client()
+        tasks = [delayed(_reg_single_plane_shift)(input_params[i]) for i in range(n_planes)]
+        results = compute(*tasks, num_workers = n_processes)
+        client.close()
+        
+        reg_stack = np.array(results)
     return reg_stack, shifts
 
 
@@ -1064,6 +1165,8 @@ def average_reg_plane(images: np.ndarray) -> Union[np.ndarray, list]:
     np.ndarray (2D)
         mean FOV of a plane after registration.
     """
+    import skimage.registration
+    import skimage
     # if num_for_ref is None or num_for_ref < 1:
     #   ref_img = np.mean(images, axis=0)
     ref_img, _ = pick_initial_reference(images)
