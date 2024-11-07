@@ -18,7 +18,7 @@ import scipy
 import seaborn as sns
 import skimage
 from PIL import Image, ImageDraw, ImageFont
-from ScanImageTiffReader import ScanImageTiffReader
+from tifffile import read_scanimage_metadata
 from tifffile import TiffFile, imread, imsave
 from tqdm import tqdm
 
@@ -441,8 +441,94 @@ def register_local_zstack_from_raw_tif(zstack_path: Union[Path, str]):
 
     return zstack_reg, channels_saved
 
+def decrosstalk_zstack(raw_path, processed_path, opid, paired_opid):
+    ''' Decrosstalk a local z-stack using the alpha and beta values from the processing json file
 
-def register_local_z_stack(zstack_path):
+    Parameters
+    ----------
+    raw_path : Path
+        Path to the raw data directory
+    processed_path : Path
+        Path to the processed data directory
+    opid : int
+        Ophys plane ID
+    paired_opid : int
+        Ophys plane ID of the paired plane
+
+
+    Returns
+    -------
+    np.ndarray
+        Decrosstalked z-stack
+    '''
+    plane_path = processed_path / str(opid)
+
+    # get local z-stack fn
+    # TODO: Use file paths information    
+    local_zstack_fn = raw_path / 'pophys' / f'ophys_experiment_{opid}' / f'{opid}_z_stack_local.h5'
+    # get paired z-stack fn
+    # TODO: Use file paths information
+    paired_zstack_fn = raw_path / 'pophys' / f'ophys_experiment_{paired_opid}' / f'{paired_opid}_z_stack_local.h5'
+
+    # Decrosstalk using alpha and beta from the opid
+    json_fn = plane_path / 'decrosstalk/processing.json'
+    alpha, beta = get_alpha_beta_from_json(json_fn)
+    
+    with h5py.File(local_zstack_fn, 'r') as f:
+        local_zstack = f['data'][:]
+    with h5py.File(paired_zstack_fn, 'r') as f:
+        paired_zstack = f['data'][:]
+    decrosstalked_zstack = np.zeros(local_zstack.shape)
+    for zi in range(local_zstack.shape[0]):
+        zplane = local_zstack[zi]
+        paired_zplane = paired_zstack[zi]
+        decrosstalked_plane, _ = apply_mixing_matrix(alpha, beta, zplane, paired_zplane)
+        decrosstalked_zstack[zi] = decrosstalked_plane
+    return decrosstalked_zstack
+
+
+# (Potentially) Redundant function from decrosstalk module
+def get_alpha_beta_from_json(json_fn):
+    with open(json_fn, 'r') as h:
+        processing = json.load(h)
+    parameters = processing['processing_pipeline']['data_processes'][1]['parameters']
+    alpha = parameters['alpha_mean']
+    beta = parameters['beta_mean']
+    return alpha, beta
+
+
+# Redundant function from decrosstalk module
+def apply_mixing_matrix(alpha, beta, signal_mean, paired_mean):
+    """Apply mixing matrix to the mean images to get reconstructed images
+    
+    Parameters:
+    -----------
+    alpha : float
+        alpha value of the unmixing matrix
+    beta : float
+        beta value of the unmixing matrix
+    signal_mean : np.array
+        mean image of the signal plane
+    paired_mean : np.array
+        mean image of the paired plane
+
+    Returns:
+    -----------
+    recon_signal : np.array
+        reconstructed signal image
+    recon_paired : np.array
+        reconstructed paired image
+    """
+    mixing_mat = [[1-alpha, beta], [alpha, 1-beta]]
+    unmixing_mat = np.linalg.inv(mixing_mat)
+    raw_data = np.vstack([signal_mean.ravel(), paired_mean.ravel()])
+    recon_data = np.dot(unmixing_mat, raw_data)
+    recon_signal = recon_data[0, :].reshape(signal_mean.shape)
+    recon_paired = recon_data[1, :].reshape(paired_mean.shape)
+    return recon_signal, recon_paired
+
+
+def register_local_z_stack(zstack_path, local_z_stack=None):
     """Get registered z-stack, both within and between planes
 
     Works for step and loop protocol?
@@ -451,8 +537,11 @@ def register_local_z_stack(zstack_path):
 
     Parameters
     ----------
+    zstack_path : Union[Path, str]
+        Path to local z-stack
     local_z_stack : np.ndarray (3D)
-        Local z-stack
+        Optional, local z-stack 
+        Usually used when registering decrosstalked z-stack
 
     Returns
     -------
@@ -474,8 +563,9 @@ def register_local_z_stack(zstack_path):
             f"({number_of_z_planes}) and number_of_repeats ({number_of_repeats})"
         )
 
-    with h5py.File(zstack_path, 'r') as f:
-        local_z_stack = f["data"][()]
+    if local_z_stack is None:
+        with h5py.File(zstack_path, 'r') as f:
+            local_z_stack = f["data"][()]
     total_num_frames = local_z_stack.shape[0]
     assert total_num_frames == number_of_z_planes * number_of_repeats
 
@@ -653,7 +743,6 @@ def rolling_average_stack(stack, n_averaging_planes=5):
         rolling average of a z-stack
     """
     stack_rolling = np.zeros_like(stack)
-    n_averaging_planes = 5  # should be in odd number
     n_flanking_planes = (n_averaging_planes - 1) // 2
     for i in range(stack.shape[0]):
         if i < n_flanking_planes:
