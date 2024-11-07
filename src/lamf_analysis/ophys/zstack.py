@@ -16,7 +16,7 @@ import seaborn as sns
 import skimage
 import skimage.exposure
 from PIL import Image, ImageDraw, ImageFont
-from ScanImageTiffReader import ScanImageTiffReader
+from tifffile import read_scanimage_metadata
 from tifffile import TiffFile, imread, imsave
 from tqdm import tqdm
 
@@ -204,7 +204,7 @@ def register_cortical_stack(zstack_path: Union[Path, str],
     # 3. Register Zstack
     reg_dicts = []  # Main list to store all results
     reg_ops = {'ref_ind': reference_plane, 'top_ring_buffer': 10,
-               'window_size': 1, 'use_adapthisteq': True}
+               'window_size': 5, 'use_adapthisteq': True}
     
     
     # num channels; not reliable from scanimage metadata, so just look at dims (05/2024)
@@ -333,27 +333,21 @@ def metadata_from_scanimage_tif(stack_path):
     dict
         roi_groups_dict: 
     """
-    with ScanImageTiffReader(str(stack_path)) as reader:
-        md_string = reader.metadata()
-
-    # split si & roi groups, prep for seprate parse
-    s = md_string.split("\n{")
-    rg_str = "{" + s[1]
-    si_str = s[0]
-
-    # parse 1: extract keys and values, dump, then load again
-    si_metadata = _extract_dict_from_si_string(si_str)
-    # parse 2: json loads works hurray
-    roi_groups_dict = json.loads(rg_str)
+    with open(stack_path, 'rb') as fh:
+        metadata = read_scanimage_metadata(fh)
 
     stack_metadata = {}
-    stack_metadata['num_slices'] = int(si_metadata['SI.hStackManager.actualNumSlices'])
-    stack_metadata['num_volumes'] = int(si_metadata['SI.hStackManager.actualNumVolumes'])
-    stack_metadata['frames_per_slice'] = int(si_metadata['SI.hStackManager.framesPerSlice'])
-    stack_metadata['z_steps'] = _str_to_int_list(si_metadata['SI.hStackManager.zs'])
-    stack_metadata['actuator'] = si_metadata['SI.hStackManager.stackActuator']
-    stack_metadata['num_channels'] = sum(_str_to_bool_list(si_metadata['SI.hPmts.powersOn']))
-    stack_metadata['z_step_size'] = int(si_metadata['SI.hStackManager.actualStackZStepSize'])
+    stack_metadata['num_slices'] = int(metadata[0]['SI.hStackManager.actualNumSlices'])
+    stack_metadata['num_volumes'] = int(metadata[0]['SI.hStackManager.actualNumVolumes'])
+    stack_metadata['frames_per_slice'] = int(metadata[0]['SI.hStackManager.framesPerSlice'])
+    stack_metadata['z_steps'] = metadata[0]['SI.hStackManager.zs']
+    stack_metadata['actuator'] = metadata[0]['SI.hStackManager.stackActuator']
+    stack_metadata['num_channels'] = sum((metadata[0]['SI.hPmts.powersOn']))
+    stack_metadata['z_step_size'] = int(metadata[0]['SI.hStackManager.actualStackZStepSize'])  
+
+    roi_groups_dict = metadata[1]
+
+    si_metadata = metadata[0]
 
     return stack_metadata, si_metadata, roi_groups_dict
 
@@ -362,8 +356,93 @@ def metadata_from_scanimage_tif(stack_path):
 # Local zstack
 ####################################################################################################
 
+def decrosstalk_zstack(raw_path, processed_path, opid, paired_opid):
+    ''' Decrosstalk a local z-stack using the alpha and beta values from the processing json file
 
-def register_local_z_stack(zstack_path):
+    Parameters
+    ----------
+    raw_path : Path
+        Path to the raw data directory
+    processed_path : Path
+        Path to the processed data directory
+    opid : int
+        Ophys plane ID
+    paired_opid : int
+        Ophys plane ID of the paired plane
+
+    Returns
+    -------
+    np.ndarray
+        Decrosstalked z-stack
+    '''
+    plane_path = processed_path / str(opid)
+
+    # get local z-stack fn
+    # TODO: Use file paths information    
+    local_zstack_fn = raw_path / 'pophys' / f'ophys_experiment_{opid}' / f'{opid}_z_stack_local.h5'
+    # get paired z-stack fn
+    # TODO: Use file paths information
+    paired_zstack_fn = raw_path / 'pophys' / f'ophys_experiment_{paired_opid}' / f'{paired_opid}_z_stack_local.h5'
+
+    # Decrosstalk using alpha and beta from the opid
+    json_fn = plane_path / 'decrosstalk/processing.json'
+    alpha, beta = get_alpha_beta_from_json(json_fn)
+    
+    with h5py.File(local_zstack_fn, 'r') as f:
+        local_zstack = f['data'][:]
+    with h5py.File(paired_zstack_fn, 'r') as f:
+        paired_zstack = f['data'][:]
+    decrosstalked_zstack = np.zeros(local_zstack.shape)
+    for zi in range(local_zstack.shape[0]):
+        zplane = local_zstack[zi]
+        paired_zplane = paired_zstack[zi]
+        decrosstalked_plane, _ = apply_mixing_matrix(alpha, beta, zplane, paired_zplane)
+        decrosstalked_zstack[zi] = decrosstalked_plane
+    return decrosstalked_zstack
+
+
+# (Potentially) Redundant function from decrosstalk module
+def get_alpha_beta_from_json(json_fn):
+    with open(json_fn, 'r') as h:
+        processing = json.load(h)
+    parameters = processing['processing_pipeline']['data_processes'][1]['parameters']
+    alpha = parameters['alpha_mean']
+    beta = parameters['beta_mean']
+    return alpha, beta
+
+
+# Redundant function from decrosstalk module
+def apply_mixing_matrix(alpha, beta, signal_mean, paired_mean):
+    """Apply mixing matrix to the mean images to get reconstructed images
+    
+    Parameters:
+    -----------
+    alpha : float
+        alpha value of the unmixing matrix
+    beta : float
+        beta value of the unmixing matrix
+    signal_mean : np.array
+        mean image of the signal plane
+    paired_mean : np.array
+        mean image of the paired plane
+
+    Returns:
+    -----------
+    recon_signal : np.array
+        reconstructed signal image
+    recon_paired : np.array
+        reconstructed paired image
+    """
+    mixing_mat = [[1-alpha, beta], [alpha, 1-beta]]
+    unmixing_mat = np.linalg.inv(mixing_mat)
+    raw_data = np.vstack([signal_mean.ravel(), paired_mean.ravel()])
+    recon_data = np.dot(unmixing_mat, raw_data)
+    recon_signal = recon_data[0, :].reshape(signal_mean.shape)
+    recon_paired = recon_data[1, :].reshape(paired_mean.shape)
+    return recon_signal, recon_paired
+
+
+def register_local_z_stack(zstack_path, local_z_stack=None):
     """Get registered z-stack, both within and between planes
 
     Works for step and loop protocol?
@@ -372,8 +451,11 @@ def register_local_z_stack(zstack_path):
 
     Parameters
     ----------
+    zstack_path : Union[Path, str]
+        Path to local z-stack
     local_z_stack : np.ndarray (3D)
-        Local z-stack
+        Optional, local z-stack 
+        Usually used when registering decrosstalked z-stack
 
     Returns
     -------
@@ -394,8 +476,9 @@ def register_local_z_stack(zstack_path):
             f"({number_of_z_planes}) and number_of_repeats ({number_of_repeats})"
         )
 
-    with h5py.File(zstack_path, 'r') as f:
-        local_z_stack = f["data"][()]
+    if local_z_stack is None:
+        with h5py.File(zstack_path, 'r') as f:
+            local_z_stack = f["data"][()]
     total_num_frames = local_z_stack.shape[0]
     assert total_num_frames == number_of_z_planes * number_of_repeats
 
@@ -572,7 +655,6 @@ def rolling_average_stack(stack, n_averaging_planes=5):
         rolling average of a z-stack
     """
     stack_rolling = np.zeros_like(stack)
-    n_averaging_planes = 5  # should be in odd number
     n_flanking_planes = (n_averaging_planes - 1) // 2
     for i in range(stack.shape[0]):
         if i < n_flanking_planes:
@@ -793,8 +875,10 @@ def save_gif_with_frame_text(reg_stack: np.ndarray,
         for i in range(reg_stack.shape[0]):
             img = Image.fromarray(norm_stack[i])
             draw = ImageDraw.Draw(img)
-            f = "/usr/share/fonts/truetype/open-sans/OpenSans-Regular.ttf"
-            draw.text((10, 10), f"plane: {i}", fill='yellow', font=ImageFont.truetype(f, 16))
+            # TODO: find fonts OS-agnostically
+            # f = "/usr/share/fonts/truetype/open-sans/OpenSans-Regular.ttf"
+            # draw.text((10, 10), f"plane: {i}", fill='yellow', font=ImageFont.truetype(f, 16))
+            draw.text((10, 10), f"plane: {i}", fill='yellow')
             frames.append(img)
     else:
         frames = norm_stack
@@ -885,7 +969,7 @@ def register_within_plane_multi(stack: np.array,
 def reg_between_planes(stack_imgs,
                        ref_ind: int = 30,
                        top_ring_buffer: int = 10,
-                       window_size: int = 1,
+                       window_size: int = 5,
                        use_adapthisteq: bool = True):
     """Register between planes. Each plane with single 2D image
     Use phase correlation.
@@ -901,7 +985,7 @@ def reg_between_planes(stack_imgs,
     top_ring_buffer : int, optional
         number of top lines to skip due to ringing noise, by default 10
     window_size : int, optional
-        window size for rolling, by default 4
+        window size for rolling, by default 5
     use_adapthisteq : bool, optional
         whether to use adaptive histogram equalization, by default True
 
