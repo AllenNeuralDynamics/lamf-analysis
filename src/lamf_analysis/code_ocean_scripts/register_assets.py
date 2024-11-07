@@ -50,7 +50,6 @@ def register_assets(run_json_path, capsule_name):
     co_cred = CodeOceanCredentials()
     co_client = CodeOceanClient.from_credentials(co_cred)
 
-
     with open(run_json_path, "r") as f:
         run_json = json.load(f)
 

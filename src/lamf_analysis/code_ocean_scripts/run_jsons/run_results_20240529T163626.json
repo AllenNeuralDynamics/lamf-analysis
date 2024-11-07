@@ -1,0 +1,76 @@
+[
+    {
+        "created": 1717025751,
+        "data_assets": [
+            {
+                "id": "02d3dedf-5722-438b-82cf-f957a0e9b220",
+                "mount": "multiplane-ophys_457841_2019-09-26_10-40-09"
+            }
+        ],
+        "has_results": false,
+        "id": "09aa194b-7391-4550-a7fb-f6f457b018f2",
+        "name": "Run 7025751",
+        "processes": [
+            {
+                "capsule_id": "4afd80bc-dddb-44b8-a35d-f8e16ce86d03",
+                "name": "capsule_aind_ophys_decrosstalk_split_3",
+                "version": 2
+            },
+            {
+                "capsule_id": "62def437-c7e0-4d7e-9bf3-34312488c070",
+                "name": "capsule_aind_ophys_dff_9",
+                "version": 3
+            },
+            {
+                "capsule_id": "d6fef8a7-3056-445b-be31-3c16f4b99fc4",
+                "name": "capsule_aind_ophys_segmentation_cellpose_5",
+                "version": 2
+            },
+            {
+                "capsule_id": "1383b25a-ecd2-4c56-8b7f-cde811c0b053",
+                "name": "capsule_aind_ophys_decrosstalk_roi_images_4",
+                "version": 1
+            },
+            {
+                "capsule_id": "4afd80bc-dddb-44b8-a35d-f8e16ce86d03",
+                "name": "capsule_aind_ophys_decrosstalk_split_2",
+                "version": 2
+            },
+            {
+                "capsule_id": "f52d9390-8569-49bb-9562-2d624b18ee56",
+                "name": "capsule_aind_ophys_movie_qc_11",
+                "version": 1
+            },
+            {
+                "capsule_id": "04eb301c-a224-407c-a3e9-ca740d63839e",
+                "name": "capsule_aind_ophys_neuropil_correction_8",
+                "version": 2
+            },
+            {
+                "capsule_id": "6c92f2cd-6898-480b-9665-ca298bf0c71c",
+                "name": "capsule_aind_ophys_oasis_event_detection_10",
+                "version": 1
+            },
+            {
+                "capsule_id": "1054eca7-5c8b-49a3-a921-c9ac78d88f01",
+                "name": "capsule_aind_ophys_trace_extraction_6",
+                "version": 2
+            },
+            {
+                "capsule_id": "5526a624-3f6c-4efc-8cff-acda47c1bfb4",
+                "name": "capsule_aind_ophys_demixing_7",
+                "version": 1
+            },
+            {
+                "capsule_id": "91a8ed4d-3b9a-49c6-9283-3f16ea5482bf",
+                "name": "capsule_aind_ophys_motion_correction_1",
+                "version": 4
+            }
+        ],
+        "run_time": 0,
+        "state": "initializing",
+        "asset_name_processed": "multiplane-ophys_681417_2023-07-18_10-56-26_processed_2024-05-29_23-35-51",
+        "asset_id": "02d3dedf-5722-438b-82cf-f957a0e9b220",
+        "asset_name": "multiplane-ophys_681417_2023-07-18_10-56-26"
+    }
+]
