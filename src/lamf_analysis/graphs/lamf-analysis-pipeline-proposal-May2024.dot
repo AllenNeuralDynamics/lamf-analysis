@@ -1,0 +1,80 @@
+digraph data_pipeline {
+    rankdir=LR;
+    node [shape=box, style=rounded];
+
+    edge [arrowsize=0.5];
+    node [fontname="Arial", fontsize=16];
+
+    raw_data -> ophys_processing_pipeline;
+    raw_data -> COMB;
+    raw_data -> eye_processing;
+    raw_data -> face_processing;
+    raw_data -> body_processing;
+    raw_data -> stimulus_processing;
+    raw_data -> czstack_capsule;
+    ophys_processing_pipeline -> ophys_asset;
+    ophys_asset -> COMB;
+    ophys_asset -> nwb_ophys [style=dashed];
+    stimulus_processing -> nwb_ophys [style=dashed];
+    nwb_ophys -> nwb_asset [style=dashed];
+    COMB -> COMB_SDK [style=invis]; // Adjusted to link SDK-like object directly above COMB
+    COMB -> brain_observatory_utilities;
+    brain_observatory_utilities -> brain_observatory_analysis;
+    eye_processing -> eye_asset;
+    czstack_capsule -> cortical_asset;
+    eye_asset -> nwb_ophys [style=dashed];
+    eye_asset -> COMB;
+    face_processing -> nwb_ophys [style=dashed];
+    body_processing -> nwb_ophys [style=dashed];
+    nwb_asset -> brain_observatory_utilities [style=dashed];
+
+    // Nodes
+    ophys_processing_pipeline [label="ophys processing\n[Pipeline]", style=filled, fillcolor="#FFCC99"]; 
+    
+    // Assets
+    ophys_asset [label="ophys processed\n[Data Asset]", style=filled, fillcolor="#CCFFCC"];
+    eye_asset [label="eye\n[Data Asset]", style=filled, fillcolor="#CCFFCC"];
+    cortical_asset [label="Cortical stack reg\n[Data Asset]", style=filled, fillcolor="#CCFFCC"];
+
+    COMB_SDK [label="", fontsize=14, shape=plaintext];
+    COMB [label=<<TABLE BORDER="0" CELLBORDER="0"><TR><TD>COMB</TD></TR><TR><TD><FONT POINT-SIZE="14">(data loading/formatting)</FONT></TD></TR></TABLE>>, style=filled, fillcolor="#CCCCFF"];
+
+    brain_observatory_utilities [label=<<TABLE BORDER="0" CELLBORDER="0"><TR><TD>brain_observatory_utilities</TD></TR><TR><TD><FONT POINT-SIZE="14">(time alignment)</FONT></TD></TR></TABLE>>, style=filled, fillcolor="#CCCCFF"];
+    brain_observatory_analysis [label=<<TABLE BORDER="0" CELLBORDER="0"><TR><TD>brain_observatory_analysis</TD></TR><TR><TD><FONT POINT-SIZE="14">(response metrics)</FONT></TD></TR></TABLE>>, style=filled, fillcolor="#CCCCFF"];
+
+    raw_data [label="ophys/behavior raw \n[Data Asset]", style=filled, fillcolor="#CCFFCC"];
+    nwb_ophys [label="NWB packaging\n[Capsule]", shape=box, style="filled,dashed", fillcolor="#CCCCCC"];
+    nwb_asset [label="NWB\n[Data Asset]", shape=box, style=filled, fillcolor="#CCFFCC"];
+
+    // Floating
+    ophys_mfish_dev [label=<<TABLE BORDER="0" CELLBORDER="0"><TR><TD>ophys_mfish_dev</TD></TR><TR><TD><FONT POINT-SIZE="14">(WIP processing, e.g. zstack_reg/zdrift/mfish coreg)</FONT></TD></TR></TABLE>>, shape=box, style=filled, fillcolor="#CCCCFF"];
+
+    lamf_ophys_analysis_dev [label=<<TABLE BORDER="0" CELLBORDER="0"><TR><TD>lamf_ophys_analysis_dev</TD></TR><TR><TD><FONT POINT-SIZE="14">(WIP analysis, e.g. GLM)</FONT></TD></TR></TABLE>>, shape=box, style=filled, fillcolor="#CCCCFF"];
+
+    // Processing capsules
+    eye_processing [label="eye processing\n[Capsule]", style=filled, fillcolor="#FFCC99"];
+    face_processing [label="face processing\n[Capsule]", style="filled,dashed", fillcolor="#CCCCCC"];
+    body_processing [label="body processing\n[Capsule]", style="filled,dashed", fillcolor="#CCCCCC"];
+    stimulus_processing [label="stimulus processing\n[Capsule]", style="filled,dashed", fillcolor="#CCCCCC"];
+    czstack_capsule [label="cortical zstack\n[Capsule]", style=filled, fillcolor="#FFCC99"];
+
+   // Legend
+    legend [shape=plaintext, label=<
+    <table border="0" cellborder="1" cellspacing="0">
+      <tr><td align="center" bgcolor="#CCCCFF">Repo</td></tr>
+      <tr><td align="center" bgcolor="#FFCC99">Pipeline/Capsule</td></tr>
+      <tr><td align="center" bgcolor="#CCFFCC">Data Asset</td></tr>
+      <tr><td align="center" style="dashed" bgcolor="#CCCCCC">Not Done</td></tr>
+    </table>>];
+
+    // Cluster subgraph for SDK-like object label
+    subgraph cluster_COMB_SDK {
+        label=""; // Label positioned directly above COMB
+        labelloc=t;
+        style=invis; // Hide the subgraph border
+        COMB_SDK;
+        COMB;
+    }
+
+    { rank = sink; legend; }
+}

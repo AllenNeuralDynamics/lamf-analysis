@@ -10,8 +10,8 @@ import pandas as pd
 import cv2
 
 
-import ophys_mfish_dev.utils as utils
-import ophys_mfish_dev.ophys.zstack as zstack
+import lamf_analysis.utils as utils
+import lamf_analysis.ophys.zstack as zstack
 
 ###############################################################
 # Zdrift 

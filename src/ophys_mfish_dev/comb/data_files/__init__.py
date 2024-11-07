@@ -1,1 +1,0 @@
-from .behavior_stimulus_file import BehaviorStimulusFile
