@@ -1,7 +1,7 @@
 import numpy as np
 from pathlib import Path
 import skimage
-from stackreg import StackReg
+from pystackreg import StackReg
 
 from lamf_analysis.ophys import zstack
 
@@ -50,10 +50,10 @@ def calculate_session_to_session_diff(opid_1, opid_2, n_averaging_planes=10, sr_
         raise ValueError('"sr_method" should be either "affine" or "rigid_body"')
         
     stack_1 = get_decrosstalked_registered_local_zstack(opid_1)
-    stack_1 = med_filt_z_stack(stack_1)
+    stack_1 = zstack.med_filt_z_stack(stack_1)
     stack_1 = zstack.rolling_average_stack(stack_1, n_averaging_planes=n_averaging_planes)
     stack_2 = get_decrosstalked_registered_local_zstack(opid_2)
-    stack_2 = med_filt_z_stack(stack_2)
+    stack_2 = zstack.med_filt_z_stack(stack_2)
     stack_2 = zstack.rolling_average_stack(stack_2, n_averaging_planes=n_averaging_planes)
 
     fov_2 = stack_2[len(stack_2)//2]
@@ -82,13 +82,14 @@ def calculate_session_to_session_diff(opid_1, opid_2, n_averaging_planes=10, sr_
     return results_info
 
 
-def get_decrosstalked_registered_local_zstack(opid):
+def get_decrosstalked_registered_local_zstack(opid, load_dir=Path('/root/capsule/scratch/decrosstalked_zstacks')):
     ''' Get decrosstalked and registered local zstack for a given opid
     This should be specific for pipeline or data structure
 
     Currently only works in this capsule (id: )
     '''
-    load_dir = Path('/root/capsule/scratch/decrosstalked_zstacks')
+    if type(load_dir) == str:
+        load_dir = Path(load_dir)
     stack_fn = load_dir / f'{opid}_decrosstalked_local_zstack_reg.npy'
     assert stack_fn.exists()
     stack = np.load(stack_fn)
@@ -174,6 +175,26 @@ def fov_stack_register_stackreg(fov, stack, use_clahe=True, sr_method='affine', 
     return corrcoef_arr, fov_reg, best_tmat, tmat_list, temp_cc
 
 
+def corrcoef_stack(stack1, stack2):
+    stack1_flat = stack1.reshape(stack1.shape[0], -1)
+    stack2_flat = stack2.reshape(stack2.shape[0], -1)
+
+    # Subtract mean along the rows (axis=1) to normalize the data
+    stack1_mean = stack1_flat - stack1_flat.mean(axis=1, keepdims=True)
+    stack2_mean = stack2_flat - stack2_flat.mean(axis=1, keepdims=True)
+
+    # Compute the numerator of the correlation coefficient (dot product of the mean-centered arrays)
+    numerator = np.dot(stack1_mean, stack2_mean.T)
+
+    # Compute the denominator of the correlation coefficient
+    denominator = np.sqrt(np.sum(stack1_mean**2, axis=1)[:, None] * np.sum(stack2_mean**2, axis=1))
+
+    # Compute the correlation coefficients matrix
+    corrcoef_arr = numerator / denominator
+
+    return corrcoef_arr
+
+
 ######################################
 # Within and across z-drift
 #
@@ -210,10 +231,11 @@ def get_container_stack_matching_ordered(opids):
     return relative_matched_inds
 
 
-def get_matched_ind(opid_1, opid_2):
+def get_matched_ind(opid_1, opid_2, load_dir=Path('/root/capsule/scratch/session_to_session_diff')):
     ''' TODO: change this to a correct path in the (future) pipeline
     '''
-    load_dir = Path('/root/capsule/scratch/session_to_session_diff')
+    if type(load_dir) == str:
+        load_dir = Path(load_dir)
     sts_fn = load_dir / f'{opid_1}_{opid_2}_session_to_session_diff.npy'
     sts = np.load(sts_fn, allow_pickle=True).item()
     return sts['stack_to_stack_diff_planes'] # be careful about the sign!
@@ -240,6 +262,24 @@ def calculate_within_across_zdrift(opids):
 
     within_across_zdrift = [wz + az for wz, az in zip(within_session_zdrift, stack_matched_inds)]
     return within_across_zdrift, success_session_inds
+
+
+def save_session_to_session_diff(opid_1, opid_2, n_averaging_planes=10, sr_method='affine',
+                                 save_dir=Path('/root/capsule/scratch/session_to_session_diff')):
+    ''' Save the results of session to session drift calculation
+    '''
+    try:
+        if type(save_dir) == str:
+            save_dir = Path(save_dir)
+        save_dir.mkdir(parents=True, exist_ok=True)
+        save_fn = save_dir / f'{opid_1}_{opid_2}_session_to_session_diff.npy'
+        if save_fn.exists():
+            return 0, (opid_1, opid_2)
+        results_info = calculate_session_to_session_diff(opid_1, opid_2, n_averaging_planes=n_averaging_planes, sr_method=sr_method)
+        np.save(save_fn, results_info)
+        return 1, (opid_1, opid_2)
+    except:
+        return -1, (opid_1, opid_2)
 
 
 def plot_within_across_zdrift(within_across_zdrift, success_session_inds,
