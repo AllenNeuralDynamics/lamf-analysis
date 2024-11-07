@@ -204,7 +204,7 @@ def register_cortical_stack(zstack_path: Union[Path, str],
     # 3. Register Zstack
     reg_dicts = []  # Main list to store all results
     reg_ops = {'ref_ind': reference_plane, 'top_ring_buffer': 10,
-               'window_size': 5, 'use_adapthisteq': True}
+               'window_size': 1, 'use_adapthisteq': True}
     
     
     # num channels; not reliable from scanimage metadata, so just look at dims (05/2024)
@@ -793,10 +793,8 @@ def save_gif_with_frame_text(reg_stack: np.ndarray,
         for i in range(reg_stack.shape[0]):
             img = Image.fromarray(norm_stack[i])
             draw = ImageDraw.Draw(img)
-            # TODO: find fonts OS-agnostically
-            # f = "/usr/share/fonts/truetype/open-sans/OpenSans-Regular.ttf"
-            # draw.text((10, 10), f"plane: {i}", fill='yellow', font=ImageFont.truetype(f, 16))
-            draw.text((10, 10), f"plane: {i}", fill='yellow')
+            f = "/usr/share/fonts/truetype/open-sans/OpenSans-Regular.ttf"
+            draw.text((10, 10), f"plane: {i}", fill='yellow', font=ImageFont.truetype(f, 16))
             frames.append(img)
     else:
         frames = norm_stack
@@ -887,7 +885,7 @@ def register_within_plane_multi(stack: np.array,
 def reg_between_planes(stack_imgs,
                        ref_ind: int = 30,
                        top_ring_buffer: int = 10,
-                       window_size: int = 5,
+                       window_size: int = 1,
                        use_adapthisteq: bool = True):
     """Register between planes. Each plane with single 2D image
     Use phase correlation.
@@ -903,7 +901,7 @@ def reg_between_planes(stack_imgs,
     top_ring_buffer : int, optional
         number of top lines to skip due to ringing noise, by default 10
     window_size : int, optional
-        window size for rolling, by default 5
+        window size for rolling, by default 4
     use_adapthisteq : bool, optional
         whether to use adaptive histogram equalization, by default True
 
