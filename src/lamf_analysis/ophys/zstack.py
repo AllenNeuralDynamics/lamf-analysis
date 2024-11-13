@@ -18,7 +18,7 @@ import scipy
 import seaborn as sns
 import skimage
 from PIL import Image, ImageDraw, ImageFont
-from tifffile import read_scanimage_metadata
+from ScanImageTiffReader import ScanImageTiffReader
 from tifffile import TiffFile, imread, imsave
 from tqdm import tqdm
 
@@ -255,7 +255,7 @@ def register_cortical_stack(zstack_path: Union[Path, str],
             reg_dict_target['channel'] = target_channel
             reg_dict_target['ref_channel'] = ref_channel
         else:
-            reg_dict_target = get_zstack_reg(stack_ref, plane_order, n_planes,
+            reg_dict_target = get_zstack_reg(stack_target, plane_order, n_planes,
                                       n_repeats_per_plane, target_channel,
                                       reg_ops)
             reg_dict_target['channel'] = target_channel
@@ -280,17 +280,24 @@ def register_cortical_stack(zstack_path: Union[Path, str],
     output_dir = output_dir / zstack_name
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    with open(output_dir / 'processing.json', 'w') as f:
+    processing_fn = output_dir / 'processing_00.json'
+    if processing_fn.exists():
+        processing_fn_old_list = list(output_dir.glob('processing_*.json'))
+        all_processing_nums = [int(str(pfn).split('_')[-1].split('.')[0]) for pfn in processing_fn_old_list]
+        new_processing_num = max(all_processing_nums) + 1
+        processing_fn = output_dir / f'processing_{new_processing_num:02}.json'
+    with open(processing_fn, 'w') as f:
         json.dump(output_dict, f, indent=4)
 
     # 6. save registered stacks + gifs
     if save:
         for i, d in enumerate(reg_dicts):
             ch = d['channel']
+            ref_ch = d['ref_channel']
             plane_reg_stack = d['plane_reg_stack']
             full_reg_stack = d['full_reg_stack']
 
-            output_dir_ch = output_dir / f"channel_{ch}"
+            output_dir_ch = output_dir / f"channel_{ch}_ref_{ref_ch}"
             output_dir_ch.mkdir(parents=True, exist_ok=True)
 
             if len(plane_reg_stack) > 200:
@@ -316,10 +323,11 @@ def register_cortical_stack(zstack_path: Union[Path, str],
     if qc_plots:
         for i, d in enumerate(reg_dicts):
             ch = d['channel']
+            ref_ch = d['ref_channel']
             plane_reg_stack = d['plane_reg_stack']
             full_reg_stack = d['full_reg_stack']
-            reg1_output_path = output_dir / f"channel_{ch}/1x_registered"
-            reg2_output_path = output_dir / f"channel_{ch}/2x_registered"
+            reg1_output_path = output_dir / f"channel_{ch}_ref_{ref_ch}/1x_registered"
+            reg2_output_path = output_dir / f"channel_{ch}_ref_{ref_ch}/2x_registered"
             print("Generating QC figures...")
             qc_figs(plane_reg_stack, zstack_path, reg1_output_path)
             qc_figs(full_reg_stack, zstack_path, reg2_output_path)
