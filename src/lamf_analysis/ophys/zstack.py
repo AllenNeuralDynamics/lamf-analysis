@@ -823,6 +823,7 @@ def _str_to_bool_list(string):
 def save_registered_stack(reg_stack,
                           zstack_path,
                           output_path,
+                          output_fn=None,
                           n_reg_steps=2):
     """Save registered stack as tiff stack
 
@@ -848,7 +849,9 @@ def save_registered_stack(reg_stack,
         reg_str = "1x"
     elif n_reg_steps == 2:
         reg_str = "2x"
-    save_path = output_path / (zstack_path.stem + f'_{reg_str}REG.tif')
+    if output_fn is None:
+        output_fn = zstack_path.stem + '_' + output_path.parent.stem + f'_{reg_str}REG.tif'
+    save_path = output_path / output_fn
 
     for i in range(reg_stack.shape[0]):
         imsave(save_path, reg_stack[i], append=True)
