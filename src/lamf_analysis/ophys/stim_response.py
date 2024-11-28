@@ -9,6 +9,11 @@ import multiprocessing as mp
 from brain_observatory_utilities.datasets.optical_physiology.data_formatting import get_stimulus_response_df
 
 
+# set up logging
+import logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # TODO: change to brain_observatory utilities
 # from mindscope_utilities.visual_behavior_ophys.data_formatting import get_stimulus_response_df
 
@@ -658,11 +663,15 @@ def stim_response_all_mp(dataset):
 
     return results_dict
 
+
 def stim_response_all(dataset, full_time_window=False):
     """no multiprocessing, just for loop"""
 
-    data_types = ['dff', 'events']
-    event_types = ["changes", "images", "omissions"]
+    data_types = ['dff', 'events'] # 'filtered_events'
+    event_types = ["changes", "omissions", "images"]
+    
+    # data_types = ['events']
+    # event_types = ["omissions"]
 
     results_dict = {}
 
@@ -678,15 +687,48 @@ def stim_response_all(dataset, full_time_window=False):
                 time_window = [-3, 3] if full_time_window else [-1.0, 1.5]
 
             print(f"Processing event_type={event_type}, data_type={data_type}")
-            results_dict[(event_type, data_type)] = get_stimulus_response_df(dataset,
-                                                                data_type=data_type,
-                                                                event_type=event_type,
-                                                                time_window=time_window,
-                                                                interpolate=False,
-                                                                output_sampling_rate=None,
-                                                                response_window_duration=response_window_duration)
+            stim_response_df = get_stimulus_response_df(dataset,
+                                                        data_type=data_type,
+                                                        event_type=event_type,
+                                                        time_window=time_window,
+                                                        interpolate=False,
+                                                        output_sampling_rate=None,
+                                                        response_window_duration=response_window_duration)
+
+            # # fix dtypes (may need to do elsewhere in code)
+            # cat_columns = ["data_type","event_type"]
+            # for col in cat_columns:
+            #     stim_response_df[col] = stim_response_df[col].astype('category')
+            stim_response_df['output_sampling_rate'] = stim_response_df['output_sampling_rate'].astype(float)
+            
+            
+            # stimulus_presentations_id       int64
+            # cell_specimen_id                int64
+            # trace                          object
+            # trace_timestamps               object
+            # mean_response                 float64
+            # baseline_response             float64
+            # p_value_gray_screen           float64
+            # ophys_frame_rate              float64
+            # data_type                     string
+            # event_type                    string
+            # interpolate                      bool
+            # output_sampling_rate          float64
+            # response_window_duration      float64
+            
+            # data_type, event_type, interpolate, output_sampling_rate, response_window_duration
+            
+            # check if empty dataframe is empty
+            if stim_response_df.empty:
+                logging.warning(f"Empty stim_response_df for event_type={event_type}, data_type={data_type}")
+                stim_reponse_df = None
+                continue
+            
+            results_dict[(event_type, data_type)] = stim_response_df
 
     return results_dict
+
+
 
 ######################################################################
 # Plotting: stim response 
