@@ -1,5 +1,9 @@
 from .session_stim_response import SessionStimResponse
-from lamf_analysis.ophys.stim_response import stim_response_all
+from .stim_response import stim_response_all
+from .bod_utils import load_bods_for_session
+
+from aind_ophys_data_access import file_handling
+
 from pathlib import Path
 
 def save_session_stim_response(session_bods,
@@ -49,3 +53,23 @@ def save_session_stim_response(session_bods,
     output_path = output_dir / f"{session_name_short}_session_stim_response.h5"
     print(f"Saving to {output_path}")
     session_stim_response.save(output_path)
+    
+    
+def save_all_session_stim_response_for_mouse(mouse_id: str, 
+                                             output_dir: Path("../scratch/"),
+                                             bod_kwargs: dict = {}):
+
+    files= file_handling.all_sessions_in_capsule()
+    assert mouse_id in files.keys(), f"Mouse {mouse_id} not found in capsule, attach data"
+    mouse_files = files[mouse_id]
+    
+    for session_name in mouse_files.keys():
+        session_bods = load_bods_for_session(mouse_files, 
+                                             session_name, 
+                                             bod_kwargs=bod_kwargs)
+        if session_bods is not None:
+            try:
+                save_session_stim_response(session_bods, output_dir)
+            except Exception as e:
+                logging.error(f"Failed to save stim response for session {session_name} with error: {e}")
+        del session_bods

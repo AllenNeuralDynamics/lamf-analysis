@@ -35,7 +35,11 @@ def load_bods_for_session(session_files: dict,
                 logging.info(f"Loading plane {plane_name}")
                 bod = BehaviorOphysDataset(plane_folder_path = plane_files["processed_plane_path"],
                                 raw_folder_path = raw_path,
-                                **bod_kwargs)         
+                                **bod_kwargs)
+                
+                # HACK
+                if "cell_specimen_id" not in bod.cell_specimen_table.columns:
+                    bod.cell_specimen_table["cell_specimen_id"] = bod.cell_specimen_table["cell_roi_id"]      
                 session_bods[plane_name] = bod
             except Exception as e:
                 logging.error(f"Failed to load plane {plane_name} with error: {e}")
