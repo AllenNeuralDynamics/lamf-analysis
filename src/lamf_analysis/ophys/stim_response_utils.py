@@ -6,6 +6,9 @@ from aind_ophys_data_access import file_handling
 
 from pathlib import Path
 
+import logging
+logger = logging.getLogger(__name__)
+
 def save_session_stim_response(session_bods,
                                output_dir = Path("../scratch")):
     """Save SessionStimResponse h5 files for all planes in a session.
@@ -51,7 +54,7 @@ def save_session_stim_response(session_bods,
     session_stim_response = SessionStimResponse(data_dict=stim_response_dict,
                                                 session_name=session_name)
     output_path = output_dir / f"{session_name_short}_session_stim_response.h5"
-    print(f"Saving to {output_path}")
+    logger.info("Saving to {output_path}")
     session_stim_response.save(output_path)
     
     
@@ -64,6 +67,15 @@ def save_all_session_stim_response_for_mouse(mouse_id: str,
     mouse_files = files[mouse_id]
     
     for session_name in mouse_files.keys():
+        
+        mouse_id, session_date = session_name.split("_")[1:3]
+        session_name_short = f"{mouse_id}_{session_date}"
+        output_file = output_dir / f"{session_name_short}_session_stim_response.h5"
+        
+        if output_file.exists():
+            logger.info(f"Session stim response already exists for {session_name}, skipping")
+            continue
+        
         session_bods = load_bods_for_session(mouse_files, 
                                              session_name, 
                                              bod_kwargs=bod_kwargs)
