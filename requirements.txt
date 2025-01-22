@@ -10,3 +10,4 @@ scikit_image
 scipy
 tifffile
 xarray
+dask
