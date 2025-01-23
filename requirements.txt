@@ -10,4 +10,5 @@ scikit_image
 scipy
 tifffile
 xarray
-dask
+dask[distributed]
+scanimage_tiff_reader
