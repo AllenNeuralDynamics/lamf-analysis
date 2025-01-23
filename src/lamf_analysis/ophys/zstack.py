@@ -280,12 +280,12 @@ def register_cortical_stack(zstack_path: Union[Path, str],
     output_dir = output_dir / zstack_name
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    processing_fn = output_dir / 'processing_00.json'
+    processing_fn = output_dir / 'registration_processing_00.json'
     if processing_fn.exists():
-        processing_fn_old_list = list(output_dir.glob('processing_*.json'))
+        processing_fn_old_list = list(output_dir.glob('registration_processing_*.json'))
         all_processing_nums = [int(str(pfn).split('_')[-1].split('.')[0]) for pfn in processing_fn_old_list]
         new_processing_num = max(all_processing_nums) + 1
-        processing_fn = output_dir / f'processing_{new_processing_num:02}.json'
+        processing_fn = output_dir / f'registration_processing_{new_processing_num:02}.json'
     with open(processing_fn, 'w') as f:
         json.dump(output_dict, f, indent=4)
 
