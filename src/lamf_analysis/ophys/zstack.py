@@ -125,7 +125,8 @@ def register_cortical_stack(zstack_path: Union[Path, str],
                             qc_plots: bool = False,
                             stack_metadata: Optional[dict] = None,
                             reference_plane: Optional[int] = 60,
-                            ref_channel: Optional[int] = None):
+                            ref_channel: Optional[int] = None,
+                            save_1x_registered: bool = False):
     """Two-step registration of a cortical z-stack up to two channels
 
     Dev notes
@@ -160,6 +161,8 @@ def register_cortical_stack(zstack_path: Union[Path, str],
     ref_channel : int, optional
         Reference channel for registration in case of multi-channel stack, by default None
         (within-channel registration)
+    save_1x_registered : bool, optional
+        Save 1x registered stack, by default False
 
     """
     start_time = time.time()
@@ -183,7 +186,7 @@ def register_cortical_stack(zstack_path: Union[Path, str],
     new_time = time.time()
 
     if stack_metadata is None:
-        stack_metadata, _, _ = metadata_from_scanimage_tif(zstack_path)
+        stack_metadata, scanimage_metadata, roi_groups_metadata = metadata_from_scanimage_tif(zstack_path)
 
         # infer plane_order, see docstring
         if stack_metadata['num_volumes'] == 1:
@@ -280,14 +283,22 @@ def register_cortical_stack(zstack_path: Union[Path, str],
     output_dir = output_dir / zstack_name
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    processing_fn = output_dir / 'registration_processing_00.json'
-    if processing_fn.exists():
-        processing_fn_old_list = list(output_dir.glob('registration_processing_*.json'))
-        all_processing_nums = [int(str(pfn).split('_')[-1].split('.')[0]) for pfn in processing_fn_old_list]
-        new_processing_num = max(all_processing_nums) + 1
-        processing_fn = output_dir / f'registration_processing_{new_processing_num:02}.json'
+    # not sure why exists, handling on new stack runs should be outside this function (MJD 01/2025)
+    # if processing_fn.exists():
+    #     processing_fn_old_list = list(output_dir.glob('registration_processing_*.json'))
+    #     all_processing_nums = [int(str(pfn).split('_')[-1].split('.')[0]) for pfn in processing_fn_old_list]
+    #     new_processing_num = max(all_processing_nums) + 1
+    #     processing_fn = output_dir / f'registration_processing_{new_processing_num:02}.json'
+
+    processing_fn = output_dir / 'registration_processing.json'
     with open(processing_fn, 'w') as f:
         json.dump(output_dict, f, indent=4)
+
+    # save other json
+    with open(output_dir / 'scanimage_metadata.json', 'w') as f:
+        json.dump(scanimage_metadata, f, indent=4)
+    with open(output_dir / 'roi_groups_metadata.json', 'w') as f:
+        json.dump(roi_groups_metadata, f, indent=4)
 
     # 6. save registered stacks + gifs
     if save:
@@ -299,38 +310,42 @@ def register_cortical_stack(zstack_path: Union[Path, str],
 
             output_dir_ch = output_dir / f"channel_{ch}_ref_{ref_ch}"
             output_dir_ch.mkdir(parents=True, exist_ok=True)
-
+            
+            # fast or slow gif
             if len(plane_reg_stack) > 200:
                 duration = 30
             elif len(plane_reg_stack) <= 200:
                 duration = 90
 
-            # saving registered stack
-            reg1_output_path = output_dir_ch / "1x_registered"
-            reg1_output_path.mkdir(parents=True, exist_ok=True)
-            save_registered_stack(plane_reg_stack, zstack_path, reg1_output_path, n_reg_steps=1)
-            # save_gif_with_frame_text(plane_reg_stack, zstack_path, reg1_output_path,
-            #                          n_reg_steps=1, duration=duration, title_str=f'{duration}ms')
+            if save_1x_registered:
+                reg1_output_path = output_dir_ch / "1x_registered"
+                reg1_output_path.mkdir(parents=True, exist_ok=True)
+                save_registered_stack(plane_reg_stack, zstack_path, reg1_output_path, n_reg_steps=1)
+                save_gif_with_frame_text(plane_reg_stack, zstack_path, reg1_output_path,
+                                        n_reg_steps=1, duration=duration, title_str=f'{duration}ms')
 
-            # save full stack
             reg2_output_path = output_dir_ch / "2x_registered"
             reg2_output_path.mkdir(parents=True, exist_ok=True)
             save_registered_stack(full_reg_stack, zstack_path, reg2_output_path, n_reg_steps=2)
-            # save_gif_with_frame_text(full_reg_stack, zstack_path, reg2_output_path,
-            #                          n_reg_steps=2, duration=duration, title_str=f'{duration}ms')
+            save_gif_with_frame_text(full_reg_stack, zstack_path, reg2_output_path,
+                                     n_reg_steps=2, duration=duration, title_str=f'{duration}ms')
 
     # 7. qc_plots
     if qc_plots:
         for i, d in enumerate(reg_dicts):
             ch = d['channel']
             ref_ch = d['ref_channel']
-            plane_reg_stack = d['plane_reg_stack']
-            full_reg_stack = d['full_reg_stack']
-            reg1_output_path = output_dir / f"channel_{ch}_ref_{ref_ch}/1x_registered"
-            reg2_output_path = output_dir / f"channel_{ch}_ref_{ref_ch}/2x_registered"
             print("Generating QC figures...")
-            qc_figs(plane_reg_stack, zstack_path, reg1_output_path)
+
+            if save_1x_registered:
+                plane_reg_stack = d['plane_reg_stack']
+                reg1_output_path = output_dir / f"channel_{ch}_ref_{ref_ch}/1x_registered"
+                qc_figs(plane_reg_stack, zstack_path, reg1_output_path)
+            
+            full_reg_stack = d['full_reg_stack']
+            reg2_output_path = output_dir / f"channel_{ch}_ref_{ref_ch}/2x_registered"
             qc_figs(full_reg_stack, zstack_path, reg2_output_path)
+
             print(f"QC figures saved to: {output_dir}")
 
     print(f"Total time to register cortical stack: {np.round(time.time() - start_time, 2)} s")
