@@ -19,7 +19,7 @@ import seaborn as sns
 import skimage
 from PIL import Image, ImageDraw, ImageFont
 from ScanImageTiffReader import ScanImageTiffReader
-from tifffile import TiffFile, imread, imsave
+from tifffile import TiffFile, imread, imsave, imwrite
 from tqdm import tqdm
 
 ####################################################################################################
@@ -868,8 +868,10 @@ def save_registered_stack(reg_stack,
         output_fn = zstack_path.stem + '_' + output_path.parent.stem + f'_{reg_str}REG.tif'
     save_path = output_path / output_fn
 
-    for i in range(reg_stack.shape[0]):
-        imsave(save_path, reg_stack[i], append=True)
+    # for i in range(reg_stack.shape[0]):
+    #     imsave(save_path, reg_stack[i], append=True)
+
+    imwrite(save_path, reg_stack)
 
     return save_path
 
