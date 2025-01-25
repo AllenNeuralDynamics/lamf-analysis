@@ -69,7 +69,7 @@ def default_cortical_zstack_registration(json_output_path: str, batch_assets_lis
     settings_dict = {
         "capsule_id": "c975fe83-f91d-457e-9e28-596e1e551790",
         "tags": ["derived"],
-        "process_name_suffix": "cortical_zstack_reg",
+        "process_name_suffix": "cortical-zstack-reg",
         "assets_list": batch_assets_list
     }
 
