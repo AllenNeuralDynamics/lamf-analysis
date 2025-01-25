@@ -324,7 +324,8 @@ def register_cortical_stack(zstack_path: Union[Path, str],
                 save_gif_with_frame_text(plane_reg_stack, zstack_path, reg1_output_path,
                                         n_reg_steps=1, duration=duration, title_str=f'{duration}ms')
 
-            reg2_output_path = output_dir_ch / "2x_registered"
+            #reg2_output_path = output_dir_ch / "2x_registered"
+            reg2_output_path = output_dir_ch
             reg2_output_path.mkdir(parents=True, exist_ok=True)
             save_registered_stack(full_reg_stack, zstack_path, reg2_output_path, n_reg_steps=2)
             save_gif_with_frame_text(full_reg_stack, zstack_path, reg2_output_path,
@@ -343,10 +344,11 @@ def register_cortical_stack(zstack_path: Union[Path, str],
                 qc_figs(plane_reg_stack, zstack_path, reg1_output_path)
             
             full_reg_stack = d['full_reg_stack']
-            reg2_output_path = output_dir / f"channel_{ch}_ref_{ref_ch}/2x_registered"
+            #reg2_output_path = output_dir / f"channel_{ch}_ref_{ref_ch}/2x_registered"
+            reg2_output_path = output_dir / f"channel_{ch}_ref_{ref_ch}"
             qc_figs(full_reg_stack, zstack_path, reg2_output_path)
 
-            print(f"QC figures saved to: {output_dir}")
+            print(f"QC figures saved to: {output_dir / 'qc'}")
 
     print(f"Total time to register cortical stack: {np.round(time.time() - start_time, 2)} s")
 
@@ -1611,7 +1613,8 @@ def qc_figs(stack: np.ndarray,
     """
 
     zstack_path = Path(zstack_path)
-    output_folder = Path(output_folder)
+    output_folder = Path(output_folder) / 'qc'
+    output_folder.mkdir(parents=True, exist_ok=True)
 
     session_id = Path(zstack_path).stem.split('_')[0]
     ts = f"osid: {session_id}"
@@ -1623,11 +1626,11 @@ def qc_figs(stack: np.ndarray,
     fig4 = plot_xy(stack, zstack_path, z_slice=None)
     fig5 = fig_plane_intensity(stack, zstack_path)
 
-    save_dict = [{'figure': fig1, 'name': 'xy_projections'},
-                 {'figure': fig2, 'name': 'xz_projections'},
-                 {'figure': fig3, 'name': 'xz_all'},
-                 {'figure': fig4, 'name': 'xy_all'},
-                 {'figure': fig5, 'name': 'plane_intensity'}]
+    save_dict = [{'figure': fig1, 'name': 'xy_projection_slices'},
+                 {'figure': fig2, 'name': 'xz_projections_slice'},
+                 {'figure': fig3, 'name': 'xz_projection_all'},
+                 {'figure': fig4, 'name': 'xy_projection_all'},
+                 {'figure': fig5, 'name': 'pixel_intensity_across_z'}]
 
     for d in save_dict:
         save_fig(d['figure'], output_folder / f"{session_id}_{d['name']}.png")
