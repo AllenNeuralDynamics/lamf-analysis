@@ -17,11 +17,16 @@ from urllib3.util import Retry
 from requests.adapters import HTTPAdapter
 import multiprocessing
 from multiprocessing import Pool
+from pathlib import Path
 
+JOBS_DIR = "/allen/programs/mindscope/workgroups/learning/mattd/co_pipeline_monitor/jobs"
 
-def setup_logging():
+def setup_logging(output_dir):
     """Configure logging with timestamp in filename"""
-    log_file = f"run_co_monitor_job_parallel_{time.strftime('%Y%m%d_%H%M%S')}.log"
+    log_file = f"co_pipeline_monitor_job_{time.strftime('%Y%m%d_%H%M%S')}.log"
+
+    output_dir = Path(output_dir)
+    log_file = output_dir / log_file
 
     # Configure both file and console handlers
     logging.basicConfig(
@@ -186,7 +191,7 @@ def main():
     """Entry point of the script"""
     try:
         args = parse_args()
-        setup_logging()
+        setup_logging(JOBS_DIR)
         run_monitor_job(args.config)
 
     except Exception as e:
