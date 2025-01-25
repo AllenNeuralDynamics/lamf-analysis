@@ -1,0 +1,161 @@
+{
+    "capsule_id": "4cf0be83-2245-4bb1-a55c-a78201b14bfe",
+    "tags": [
+        "derived",
+        "eye_tracking",
+        "ophys-mfish"
+    ],
+    "process_name_suffix": "dlc-eye",
+    "assets_list": [
+        [
+            {
+                "id": "b5458427-f446-4308-aba4-609cfeb90acb",
+                "mount": "multiplane-ophys_736963_2024-07-09_09-13-58"
+            }
+        ],
+        [
+            {
+                "id": "4e8e516a-0cbe-477f-8c19-96913e5aa425",
+                "mount": "multiplane-ophys_736963_2024-07-10_09-02-58"
+            }
+        ],
+        [
+            {
+                "id": "17a7e310-bc74-4d77-8745-deeee1de9b5c",
+                "mount": "multiplane-ophys_736963_2024-07-11_08-45-05"
+            }
+        ],
+        [
+            {
+                "id": "b7ae31ca-71a6-42ea-a467-8e839212fabd",
+                "mount": "multiplane-ophys_736963_2024-07-12_09-20-11"
+            }
+        ],
+        [
+            {
+                "id": "7d2bc78e-b356-453c-b2e4-007f5b5a92af",
+                "mount": "multiplane-ophys_736963_2024-07-15_09-23-32"
+            }
+        ],
+        [
+            {
+                "id": "ec3b0265-25cc-48ad-972e-ef425e877b88",
+                "mount": "multiplane-ophys_736963_2024-07-16_09-17-44"
+            }
+        ],
+        [
+            {
+                "id": "bfc7c4c8-efb7-4b67-9967-7d8596465632",
+                "mount": "multiplane-ophys_736963_2024-07-18_08-41-14"
+            }
+        ],
+        [
+            {
+                "id": "a0f52a4e-ea76-4d67-b790-5dafb06fff85",
+                "mount": "multiplane-ophys_736963_2024-07-19_09-14-01"
+            }
+        ],
+        [
+            {
+                "id": "0b6188b4-c0e4-4391-b5b2-0768bd7fbec2",
+                "mount": "multiplane-ophys_736963_2024-07-22_08-54-38"
+            }
+        ],
+        [
+            {
+                "id": "d45dc793-88d1-46f9-9de2-44b12ba6d1a9",
+                "mount": "multiplane-ophys_736963_2024-07-23_08-57-56"
+            }
+        ],
+        [
+            {
+                "id": "2fcadf6d-26ae-454a-bcc3-87ba5dcec4c3",
+                "mount": "multiplane-ophys_736963_2024-07-24_08-49-57"
+            }
+        ],
+        [
+            {
+                "id": "8024ee33-c834-46a5-8baa-e61f34132918",
+                "mount": "multiplane-ophys_736963_2024-07-26_09-37-45"
+            }
+        ],
+        [
+            {
+                "id": "b1bfe788-dcd6-4de0-8d50-0cebcce1c017",
+                "mount": "multiplane-ophys_736963_2024-07-29_09-00-58"
+            }
+        ],
+        [
+            {
+                "id": "6ecfb6fd-dc56-4224-9998-b2e4d3d53f51",
+                "mount": "multiplane-ophys_736963_2024-07-30_09-11-03"
+            }
+        ],
+        [
+            {
+                "id": "24c8de07-7fd8-49a3-bed9-765be48f3025",
+                "mount": "multiplane-ophys_736963_2024-08-01_08-59-00"
+            }
+        ],
+        [
+            {
+                "id": "5085308a-c0d2-4e2c-94f3-6eb80a33a37c",
+                "mount": "multiplane-ophys_736963_2024-08-05_09-19-25"
+            }
+        ],
+        [
+            {
+                "id": "c7ad3686-c50e-4a6c-9670-05bfd44e9221",
+                "mount": "multiplane-ophys_736963_2024-08-06_08-52-03"
+            }
+        ],
+        [
+            {
+                "id": "f2cf67b8-990f-4c73-a4fa-9f768c6fd1a3",
+                "mount": "multiplane-ophys_736963_2024-08-07_09-11-10"
+            }
+        ],
+        [
+            {
+                "id": "a494d5a6-b567-4876-9418-155c98ca7e25",
+                "mount": "multiplane-ophys_736963_2024-08-09_08-58-36"
+            }
+        ],
+        [
+            {
+                "id": "3fc747df-a25f-4cee-97ff-b89d8bf70557",
+                "mount": "multiplane-ophys_736963_2024-08-12_09-17-19"
+            }
+        ],
+        [
+            {
+                "id": "ae65b44f-975c-4253-993d-de4fbd7b21e2",
+                "mount": "multiplane-ophys_736963_2024-08-13_08-57-29"
+            }
+        ],
+        [
+            {
+                "id": "9139006a-2915-4f7b-9429-79f4e33f2630",
+                "mount": "multiplane-ophys_736963_2024-08-23_09-13-46"
+            }
+        ],
+        [
+            {
+                "id": "ac05979e-4356-4898-9f3f-290fb7186807",
+                "mount": "multiplane-ophys_736963_2024-08-26_09-54-51"
+            }
+        ],
+        [
+            {
+                "id": "a895f53b-620b-4e76-9de7-21a7bee4ba3c",
+                "mount": "multiplane-ophys_736963_2024-08-27_08-51-49"
+            }
+        ],
+        [
+            {
+                "id": "eb968555-cab4-482a-b5c6-9bfbf2ec7fe0",
+                "mount": "multiplane-ophys_736963_2024-08-29_10-20-27"
+            }
+        ]
+    ]
+}

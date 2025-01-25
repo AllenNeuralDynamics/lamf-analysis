@@ -89,34 +89,80 @@ def setup_codeocean_client():
     return client
 
 
+# def load_json_config(config_path):
+#     """Load JSON configuration from a file"""
+#     try:
+#         with open(config_path, 'r') as f:
+#             config = json.load(f)
+  
+#             # Create a list of settings from the config
+#             settings_list = []
+#             for setting in config['settings_list']:
+
+
+#                 batch_settings = PipelineMonitorSettings.model_validate(
+#                     {
+#                         "run_params": {
+#                             "capsule_id": setting['capsule_id'],
+#                             "data_assets": [
+#                                 DataAssetsRunParam(
+#                                     id=asset['id'],
+#                                     mount=asset['mount']
+#                                 ) for asset in setting['assets_list']
+#                             ],
+#                             # "named_parameters": [
+#                             #     NamedRunParam(param_name=key, value=value)
+#                             #     for key, value in setting['named_parameters'].items()
+#                             # ]
+#                             "named_parameters": []
+#                         },
+#                         "capture_settings": CaptureSettings(
+#                             tags=setting['tags'],
+#                             process_name_suffix=setting['process_name_suffix']
+#                         )
+#                     }
+#                 )
+#                 settings_list.append(batch_settings)
+#             return settings_list
+#     except FileNotFoundError:
+#         logging.error(f"Config file not found: {config_path}")
+#         sys.exit(1)
+#     except json.JSONDecodeError as e:
+#         logging.error(f"Invalid JSON in config file: {e}")
+#         sys.exit(1)
+#     except ValueError as e:
+#         logging.error(f"Invalid configuration: {e}")
+#         sys.exit(1)
+
+
 def load_json_config(config_path):
     """Load JSON configuration from a file"""
     try:
         with open(config_path, 'r') as f:
             config = json.load(f)
-  
-            # Create a list of settings from the config
-            settings_list = []
-            for setting in config['settings_list']:
-                batch_settings = PipelineMonitorSettings.model_validate(
-                    {
-                        "run_params": {
-                            "capsule_id": setting['capsule_id'],
-                            "data_assets": [
-                                DataAssetsRunParam(
-                                    id=asset['id'],
-                                    mount=asset['mount']
-                                ) for asset in setting['assets_list']
-                            ],
-                            "named_parameters": [
-                                NamedRunParam(param_name=key, value=value)
-                                for key, value in setting['named_parameters'].items()
-                            ]
-                        },
-                        "capture_settings": CaptureSettings(
-                            tags=setting['tags'],
-                            process_name_suffix=setting['process_name_suffix']
-                        )
+
+
+
+            batch_settings = PipelineMonitorSettings.model_validate(
+                {
+                    "run_params": {
+                        "capsule_id": setting['capsule_id'],
+                        "data_assets": [
+                            DataAssetsRunParam(
+                                id=asset['id'],
+                                mount=asset['mount']
+                            ) for asset in setting['assets_list']
+                        ],
+                        # "named_parameters": [
+                        #     NamedRunParam(param_name=key, value=value)
+                        #     for key, value in setting['named_parameters'].items()
+                        # ]
+                        "named_parameters": []
+                    },
+                    "capture_settings": CaptureSettings(
+                        tags=setting['tags'],
+                        process_name_suffix=setting['process_name_suffix']
+                    )
                     }
                 )
                 settings_list.append(batch_settings)
@@ -162,9 +208,6 @@ def run_single_job(settings_json: str):
     try:
         # Create new client for each process
         client = setup_codeocean_client()
-
-        # Parse JSON string to PipelineMonitorSettings
-        settings = PipelineMonitorSettings.model_validate_json(settings_json)
         
         # Debug logging
         logging.info(f"Parsed settings: {settings.model_dump_json(indent=2)}")
@@ -179,10 +222,11 @@ def run_single_job(settings_json: str):
         raise  # Re-raise the exception for the caller to handle
 
 
-def run_jobs(settings_list: List[str]):
+def run_jobs(config_path):
     """Run multiple jobs from settings JSON strings"""
     setup_logging()
     
+    settings_list = load_json_config(config_path)
     for settings_json in settings_list:
         try:
             run_single_job(settings_json)

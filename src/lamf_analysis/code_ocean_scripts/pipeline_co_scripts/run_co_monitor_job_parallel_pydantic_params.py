@@ -77,19 +77,19 @@ def load_json_config(config_path):
                     {
                         "run_params": {
                             "capsule_id": config['capsule_id'],
-                            # "data_assets": [
-                            #     DataAssetsRunParam(
-                            #         id=asset['id'],
-                            #         mount=asset['mount']
-                            #     ) for asset in batch
-                            # ]
-                            "data_assets": batch,
+                            "data_assets": [
+                                DataAssetsRunParam(
+                                    id=asset['id'],
+                                    mount=asset['mount']
+                                ) for asset in batch
+                            ],
+                            #"data_assets": batch,
                             #"named_parameters": config.get('named_parameters', {})
                             # make each key param_name and value is value in NamedRunParam for each key in named_parameters
-                            "named_parameters": [
-                                NamedRunParam(param_name=key, value=value)
-                                for key, value in config['named_parameters'].items()
-                            ]
+                            # "named_parameters": [
+                            #     NamedRunParam(param_name=key, value=value)
+                            #     for key, value in config['named_parameters'].items()
+                            # ]
                         },
                         "capture_settings": CaptureSettings(
                             tags=config['tags'],
@@ -170,7 +170,7 @@ def run_monitor_job(config_path, max_processes=None):
         results = []
         for settings_json in job_settings_list:
             if results:
-                time.sleep(30)
+                time.sleep(10)
 
             logging.info(f"Submitting new job")
             result = pool.apply_async(run_single_job, (settings_json,))
