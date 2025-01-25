@@ -6,7 +6,7 @@ from typing import List, Dict, Union
 import logging
 logger = logging.getLogger(__name__)
 
-def make_batch_list(table,id_key : str = 'raw_asset_id', mount_key: str = 'mount'):
+def make_batch_asset_list_from_table(table,id_key : str = 'raw_asset_id', mount_key: str = 'mount'):
     # note list of lists for batches script
     batch_list = [[{'id': id, 'mount': mount} for id, mount in zip(table[id_key], table[mount_key])]]
     return batch_list
@@ -37,6 +37,39 @@ def default_dlc_eye(json_output_path: str, batch_assets_list: list):
         "capsule_id": "4cf0be83-2245-4bb1-a55c-a78201b14bfe",
         "tags": ["derived", "eye_tracking", "ophys-mfish"],
         "process_name_suffix": "dlc-eye",
+        "assets_list": batch_assets_list
+    }
+
+    with open(json_output_path, 'w') as f:
+        json.dump(settings_dict, f, indent=4)
+
+
+def default_cortical_zstack_registration(json_output_path: str, batch_assets_list: list):
+    """
+    Generate a default settings file for the 
+
+    Parameters
+    ----------
+    json_output_path : str
+        Path to the output JSON file.
+    batch_assets_list : list
+        List of lists of assets to include in the job.
+        Outer list is batches, inner list is assets in a batch.
+        Each batch will be run in parallel.
+        Example:
+        [
+            [{"id": "asset1", "mount": "a1"},
+            {"id": "asset2", "mount": "a2"}],
+            [{"id": "asset2", "mount": "b1"}]
+        ]
+    
+    TODO: Could make input just list of assets, and look up mount from asset metadata
+
+    """
+    settings_dict = {
+        "capsule_id": "c975fe83-f91d-457e-9e28-596e1e551790",
+        "tags": ["derived"],
+        "process_name_suffix": "cortical_zstack_reg",
         "assets_list": batch_assets_list
     }
 
