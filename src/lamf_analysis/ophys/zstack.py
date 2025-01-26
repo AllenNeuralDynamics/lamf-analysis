@@ -122,7 +122,8 @@ def deinterleave_channels(stack: np.ndarray,
 def register_cortical_stack(zstack_path: Union[Path, str],
                             save: bool = False,
                             output_dir: Path = None,
-                            qc_plots: bool = False,
+                            zstack_folder: Optional[str] = None,
+                            qc_plots: Optional[bool] = False,
                             stack_metadata: Optional[dict] = None,
                             reference_plane: Optional[int] = 60,
                             ref_channel: Optional[int] = None,
@@ -149,6 +150,8 @@ def register_cortical_stack(zstack_path: Union[Path, str],
         Save registered stacks, by default False
     output_dir : Path, optional
         Path to save registered stacks, by default None
+    zstack_folder: str, optional
+        Output folder name, by default None
     qc_plots : bool, optional
         Generate QC plots, by default False
     stack_metadata : dict, optional
@@ -173,6 +176,13 @@ def register_cortical_stack(zstack_path: Union[Path, str],
     output_dir.mkdir(parents=True, exist_ok=True)
     if save and output_dir is None:
         raise ValueError("output_dir must be provided if save is True")
+
+    # output folder (either given name or name of zstack file)
+    if zstack_folder is not None:
+        output_dir = output_dir / zstack_folder
+    else:
+        output_dir = output_dir / zstack_path.name.split('.')[0]
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     # 1. load stack
     print(f"Loading stack from: {zstack_path}")
@@ -278,10 +288,7 @@ def register_cortical_stack(zstack_path: Union[Path, str],
         ch = d['channel']
         output_dict[f'channel_{ch}'] = {'shifts_between': _list_array_to_list(d['shifts_between'])}
 
-    # 6. save processing json
-    zstack_name = zstack_path.name.split('.')[0]
-    output_dir = output_dir / zstack_name
-    output_dir.mkdir(parents=True, exist_ok=True)
+    
 
     # not sure why exists, handling on new stack runs should be outside this function (MJD 01/2025)
     # if processing_fn.exists():
@@ -313,7 +320,7 @@ def register_cortical_stack(zstack_path: Union[Path, str],
             
             # fast or slow gif
             if len(plane_reg_stack) > 200:
-                duration = 30
+                duration = 40
             elif len(plane_reg_stack) <= 200:
                 duration = 90
 
@@ -860,14 +867,15 @@ def save_registered_stack(reg_stack,
     Path
         Path to saved stack
     """
-    zstack_path = Path(zstack_path)
+    #zstack_path = Path(zstack_path)
 
     if n_reg_steps == 1:
         reg_str = "1x"
     elif n_reg_steps == 2:
         reg_str = "2x"
     if output_fn is None:
-        output_fn = zstack_path.stem + '_' + output_path.parent.stem + f'_{reg_str}REG.tif'
+        #output_fn = zstack_path.stem + '_' + output_path.parent.stem + f'_{reg_str}REG.tif'
+        output_fn = output_path.parent.stem + f'_{reg_str}REG.tif'
     save_path = output_path / output_fn
 
     # for i in range(reg_stack.shape[0]):
@@ -985,7 +993,7 @@ def save_gif_with_frame_text(reg_stack: np.ndarray,
     elif n_reg_steps == 2:
         reg_str = "2x"
 
-    fn = output_path / (zstack_path.stem + f'_{reg_str}REG_{title_str}.gif')
+    fn = output_path / (output_path.parent.stem + f'_{title_str}_{reg_str}REG.gif')
 
     norm_stack = normalize_stack_unit8(reg_stack)
     frames = []
@@ -1627,10 +1635,10 @@ def qc_figs(stack: np.ndarray,
     fig5 = fig_plane_intensity(stack, zstack_path)
 
     save_dict = [{'figure': fig1, 'name': 'xy_projection_slices'},
-                 {'figure': fig2, 'name': 'xz_projections_slice'},
+                 {'figure': fig2, 'name': 'xz_projection_slice'},
                  {'figure': fig3, 'name': 'xz_projection_all'},
                  {'figure': fig4, 'name': 'xy_projection_all'},
                  {'figure': fig5, 'name': 'pixel_intensity_across_z'}]
 
     for d in save_dict:
-        save_fig(d['figure'], output_folder / f"{session_id}_{d['name']}.png")
+        save_fig(d['figure'], output_folder / f"{d['name']}.png")
