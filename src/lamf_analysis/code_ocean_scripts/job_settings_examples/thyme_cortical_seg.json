@@ -1,0 +1,21 @@
+{
+    "capsule_id": "0a174d03-4330-4f76-a76c-c56cca4293f0",
+    "tags": [
+        "derived"
+    ],
+    "process_name_suffix": "cortical-zstack-seg",
+    "assets_list": [
+        [
+            {
+                "id": "fea8cbec-60f6-4081-a35c-3f72adb6859a",
+                "mount": "multiplane-ophys_736963_2024-08-27_08-51-49_cortical-zstack-reg_2025-01-26_20-17-48"
+            }
+        ],
+        [
+            {
+                "id": "98fbe556-e58e-4586-90d6-183928cc169c",
+                "mount": "multiplane-ophys_736963_2024-07-09_09-13-58_cortical-zstack-reg_2025-01-26_20-17-18"
+            }
+        ]
+    ]
+}

@@ -77,6 +77,39 @@ def default_cortical_zstack_registration(json_output_path: str, batch_assets_lis
         json.dump(settings_dict, f, indent=4)
 
 
+def default_cortical_zstack_segmentation(json_output_path: str, batch_assets_list: list):
+    """
+    Generate a default settings file for the 
+
+    Parameters
+    ----------
+    json_output_path : str
+        Path to the output JSON file.
+    batch_assets_list : list
+        List of lists of assets to include in the job.
+        Outer list is batches, inner list is assets in a batch.
+        Each batch will be run in parallel.
+        Example:
+        [
+            [{"id": "asset1", "mount": "a1"},
+            {"id": "asset2", "mount": "a2"}],
+            [{"id": "asset2", "mount": "b1"}]
+        ]
+    
+    TODO: Could make input just list of assets, and look up mount from asset metadata
+
+    """
+    settings_dict = {
+        "capsule_id": "0a174d03-4330-4f76-a76c-c56cca4293f0",
+        "tags": ["derived"],
+        "process_name_suffix": "cortical-zstack-seg",
+        "assets_list": batch_assets_list
+    }
+
+    with open(json_output_path, 'w') as f:
+        json.dump(settings_dict, f, indent=4)
+
+
 def default_roicat(assets_list: List[Dict],
                   update_params: Dict = {},
                   job_name_suffix: str = time.strftime("%Y%m%d_%H%M%S"),
