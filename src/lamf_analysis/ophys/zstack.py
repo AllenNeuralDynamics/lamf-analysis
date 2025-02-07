@@ -1203,8 +1203,7 @@ def average_reg_plane(images: np.ndarray) -> Union[np.ndarray, list]:
     np.ndarray (2D)
         mean FOV of a plane after registration.
     """
-    import skimage.registration
-    import skimage
+
     # if num_for_ref is None or num_for_ref < 1:
     #   ref_img = np.mean(images, axis=0)
     ref_img, _ = pick_initial_reference(images)
