@@ -27,30 +27,6 @@ def check_ophys_folder(path):
 
     return ophys_folder
 
-def plane_paths_from_session(session_path: Union[Path, str],
-                             data_level: str = "raw") -> list:
-    """Get plane paths from a session directory
-
-    Parameters
-    ----------
-    session_path : Union[Path, str]
-        Path to the session directory
-    data_level : str, optional
-        Data level, by default "raw". Options: "raw", "processed"
-
-    Returns
-    -------
-    list
-        List of plane paths
-    """
-    session_path = Path(session_path)
-    if data_level == "processed":
-        planes = [x for x in session_path.iterdir() if x.is_dir()]
-        planes = [x for x in planes if 'nextflow' not in x.name]
-    elif data_level == "raw":
-        planes = list((session_path / 'ophys').glob('ophys_experiment_*'))
-    return planes
-
 
 def get_motion_correction_crop_xy_range(plane_path: Union[Path, str]) -> tuple:
     """Get x-y ranges to crop motion-correction frame rolling
@@ -89,3 +65,45 @@ def get_motion_correction_crop_xy_range(plane_path: Union[Path, str]) -> tuple:
     # range_y = [-min_y, -max_y]
     # range_x = [-min_x, -max_x]
     return range_y, range_x
+
+
+####################################################################################################
+## Mean response
+####################################################################################################
+def condition_rename(mean_response_df, condition_version):
+    conditions = mean_response_df.condition.unique()
+    if condition_version == 1:
+        pass # not implemented yet
+    elif condition_version == 2:
+        condition_map = {}
+        for condition in conditions:
+            if 'image_name in [' in condition:
+                condition_map[condition] = 'all-images'
+            elif 'image_name==' in condition:
+                temp_image_name = condition.split('==')[1].split(' ')[0].strip('"')
+                if 'flashes_since_change' in condition:
+                    condition_map[condition] = temp_image_name
+                elif 'is_change' in condition and 'hit' not in condition and 'miss' not in condition:
+                    condition_map[condition] = f'change - {temp_image_name}'
+                elif 'is_change and hit' in condition:
+                    condition_map[condition] = f'hit - {temp_image_name}'
+                elif 'is_change and miss' in condition:
+                    condition_map[condition] = f'miss - {temp_image_name}'
+                else:
+                    raise ValueError(f'Unknown condition: {condition}')
+            elif condition == 'omitted':
+                condition_map[condition] = 'omission'
+            elif condition == 'is_change':
+                condition_map[condition] = 'change'
+            elif condition == 'is_change and hit':
+                condition_map[condition] = 'hit'
+            elif condition == 'is_change and miss':
+                condition_map[condition] = 'miss'
+            else:
+                raise ValueError(f'Unknown condition: {condition}')
+        mean_response_df['condition_query_str'] = mean_response_df.condition
+        mean_response_df['condition'] = mean_response_df.condition.map(condition_map)
+    elif condition_version == 3:
+        pass # not implemented yet
+    else:
+        raise ValueError(f'Invalid condition_version: {condition_version}')
