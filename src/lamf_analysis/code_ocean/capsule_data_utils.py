@@ -252,7 +252,9 @@ def get_bod_list(raw_path):
         bod = load_plane_data(session_name, opid=opid)
         # cell_specimen_table = get_roi_df_with_valid_roi(bod)
         # bod = add_trials_to_bod(bod)
-        _ = cbu.merge_trials_to_stim_table(bod)
+        session_type = bod.behavior_stimulus_file.session_type
+        if 'STAGE_' not in session_type:
+            _ = cbu.merge_trials_to_stim_table(bod)
         bod_list.append(bod)
     return bod_list
 
@@ -272,7 +274,9 @@ def get_any_bod(raw_path):
             opid = plane_folder.name
             break
     bod = load_plane_data(session_name, opid=opid)
-    stim_table = cbu.merge_trials_to_stim_table(bod)
+    session_type = bod.behavior_stimulus_file.session_type
+    if 'STAGE_' not in session_type:
+        stim_table = cbu.merge_trials_to_stim_table(bod)
     return bod
 
 
@@ -304,7 +308,9 @@ def load_plane_data(session_name, opid=None, opid_ind=None, data_dir='/root/caps
     processed_dirs = glob.glob(str(data_dir / f'{session_name}*processed*'))
     eye_dirs = glob.glob(str(data_dir / f'{session_name}*dlc-eye*'))
     if len(eye_dirs) == 0:
-        raise ValueError(f'No eye tracking data found for session {session_name}')
+        # raise ValueError(f'No eye tracking data found for session {session_name}')
+        print(f'No eye tracking data found for session {session_name}')
+        eye_path = None
     elif len(eye_dirs) > 1:
         raise ValueError(f'Multiple eye tracking data found for session {session_name}')
     else:
