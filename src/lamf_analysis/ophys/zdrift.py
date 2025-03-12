@@ -46,8 +46,8 @@ def zdrift_for_session_planes(session_path: Union[Path, str],
     return zdrift_dict
 
 
-def calc_zdrift(movie_dir: Path, 
-                reference_stack_path: Path,
+def calc_zdrift(processed_plane_path: Path, 
+                raw_plane_path: Path,
                 use_clahe=True, 
                 use_valid_pix=True, 
                 ):
@@ -63,10 +63,10 @@ def calc_zdrift(movie_dir: Path,
 
     Parameters
     ----------
-    movie_dir : Path
-        Path to the movie directory (should be "decrosstalk" dir)
-    reference_stack_path : Path
-        Path to the reference stack
+    processed_plane_path : Path
+        Path to the processed plane directory
+    raw_plane_path : Path
+        Path to the raw plane directory
     save_dir : Path
         Path to save the result
     segment_minute : int, optional
@@ -86,24 +86,36 @@ def calc_zdrift(movie_dir: Path,
     """
     # valid_threshold = 0.01  # TODO: find the best valid threshold
 
-    save_dir = Path(save_dir)
-
     # to remove rolling effect from motion correction
     range_y, range_x = utils.get_motion_correction_crop_xy_range(
-        movie_dir)  
+        processed_plane_path)
 
     # Get reference z-stack and crop
     # TODO: it should be processed first in the pipeline, and this part of code 
     # should just retrieve the processed (decrosstalked & registered) z-stack
-    ref_zstack = zstack.register_local_z_stack(reference_stack_path)
+
+    # TODO: the following code does not work with data uploaded from rig
+    # z-stack splitting and saving to h5 should be done first
+    try:
+        local_zstack_path = list(raw_plane_path.glob('*_z_stack_local.h5'))[0]
+    except:
+        raise FileNotFoundError('Local z-stack not found')
+    ref_zstack = zstack.register_local_z_stack(local_zstack_path)
     ref_zstack_crop = ref_zstack[:, range_y[0]:range_y[1], range_x[0]:range_x[1]]
+
+    si_metadata, roi_groups = zstack.local_zstack_metadata(local_zstack_path)
+    number_of_z_planes= int(si_metadata['SI.hStackManager.actualNumSlices'])
+    # number_of_repeats = int(si_metadata['SI.hStackManager.actualNumVolumes'])
+    z_step = float(si_metadata['SI.hStackManager.actualStackZStepSize'])
 
     # Get preprocessed z-stack
     stack_pre = med_filt_z_stack(ref_zstack_crop)
     stack_pre = rolling_average_stack(stack_pre)
 
     # Get episodic mean FOVs (emf) and crop
-    emf_h5_fn = list(Path(movie_dir).glob('*_decrosstalk_episodic_mean_fov.h5'))[0]
+    # TODO: make the mean FOV movie with finer time resolution
+    decrosstalk_dir = processed_plane_path / 'decrosstalk'
+    emf_h5_fn = list(Path(decrosstalk_dir).glob('*_decrosstalk_episodic_mean_fov.h5'))[0]
     with h5py.File(emf_h5_fn, 'r') as h:
         episodic_mean_fovs = h['data'][:]
     episodic_mean_fovs_crop = episodic_mean_fovs[:, range_y[0]:range_y[1], range_x[0]:range_x[1]]
@@ -124,13 +136,17 @@ def calc_zdrift(movie_dir: Path,
         shift_list.append(shift)
     corrcoef = np.asarray(corrcoef)
 
-    results = {'matched_plane_indices': matched_plane_indices,
-                   'corrcoef': corrcoef,
-                   'segment_fov_registered': segment_reg_imgs,
-                   'ref_zstack_crop': ref_zstack_crop,                   
-                   'shift': shift_list,
-                   'use_clahe': use_clahe,
-                   'use_valid_pix': use_valid_pix}
+    center_z = number_of_z_planes // 2
+    zdrift_um = z_step * (matched_plane_indices - center_z)
+
+    results = {'zdrift_um': zdrift_um,
+                'matched_plane_indices': matched_plane_indices,
+                'corrcoef': corrcoef,
+                'segment_fov_registered': segment_reg_imgs,
+                'ref_zstack_crop': ref_zstack_crop,                   
+                'shift': shift_list,
+                'use_clahe': use_clahe,
+                'use_valid_pix': use_valid_pix}
 
     return results
 
