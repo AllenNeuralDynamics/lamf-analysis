@@ -68,10 +68,16 @@ def get_motion_correction_crop_xy_range(plane_path: Union[Path, str]) -> tuple:
     list, list
         Lists of y range and x range, [start, end] pixel index
     """
-    processing_json_fn = list((Path(plane_path) / 'motion_correction').glob(
-        'processing.json'))[0]
-    processing_json = json.load(open(processing_json_fn))
-    max_shift_prop = processing_json['processing_pipeline']['data_processes'][0]['parameters']['suite2p_args']['maxregshift']
+    try:
+        processing_json_fn = list((Path(plane_path) / 'motion_correction').glob(
+            'processing.json'))[0]
+        processing_json = json.load(open(processing_json_fn))
+        max_shift_prop = processing_json['processing_pipeline']['data_processes'][0]['parameters']['suite2p_args']['maxregshift']
+    except:
+        processing_json_fn = list((Path(plane_path) / 'motion_correction').glob(
+            '*_motion_correction_data_process.json'))[0]
+        processing_json = json.load(open(processing_json_fn))
+        max_shift_prop = processing_json['parameters']['suite2p_args']['maxregshift']
     
     motion_csv = list((Path(plane_path) / 'motion_correction').glob(
         '*_motion_transform.csv'))[0]
