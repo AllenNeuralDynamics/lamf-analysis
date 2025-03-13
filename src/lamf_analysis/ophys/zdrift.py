@@ -6,6 +6,10 @@ import skimage
 import scipy
 import cv2
 import matplotlib.pyplot as plt
+import ray
+import sys
+import os
+os.environ["RAY_verbose_spill_logs"] = "0"
 
 import lamf_analysis.utils as utils
 import lamf_analysis.ophys.zstack as zstack
@@ -23,32 +27,53 @@ import lamf_analysis.ophys.zstack as zstack
 # Session to session matching by using zstack to zstack registration (implemented in a different file) 
 ###############################################################
 
-def zdrift_for_session_planes(session_path: Union[Path, str],
+def zdrift_for_session_planes(raw_path: Union[Path, str],
+                              parallel: bool = True,
                               **zdrift_kwargs) -> dict:
     """Get z-drift for all the planes in a session
     Parameters
     ----------
-    session_path : Path
-        Path to the session directory
+    raw_path : Path
+        Path to the raw session directory
     zdrift_kwargs : dict
-        Arguments for calc_zdrift
+        Arguments for calc_zdrift (use_clahe and use_valid_pix)
 
     Returns
     -------
     dict
         Dictionary of z-drift for each plane
     """
-    path_to_all_planes = utils.plane_paths_from_session(session_path, data_level="processed")
+    raw_path_to_all_planes = utils.plane_paths_from_session(raw_path,
+                                                        data_level="raw")
 
-    zdrift_dict = {}
-    for path_to_plane in path_to_all_planes:
-        plane_id = int(path_to_plane.name.split('_')[-1])
-        zdrift_dict[plane_id] = calc_zdrift(path_to_plane, **zdrift_kwargs)
+    if parallel:
+        spill_dir = "/root/capsule/scratch/ray"
+        sys.path.append('/root/capsule/code')  
+        ray.init(ignore_reinit_error=True,
+                _temp_dir=spill_dir,
+                object_store_memory=(2**10)**3 * 4,
+                _system_config={"object_spilling_config": f'{{"type":"filesystem","params":{{"directory_path":"{spill_dir}"}}}}'},
+                runtime_env={"working_dir": "/root/capsule/code",
+                             "excludes": list(Path('/root/capsule/code').rglob('*.ipynb'))})
+        futures = []
+        for path_to_plane in raw_path_to_all_planes:
+            futures.append(ray.remote(calc_zdrift).remote(path_to_plane, **zdrift_kwargs))
+        result_dict = ray.get(futures)
+        ray.shutdown()
+        plane_ids = np.sort([result['plane_id'] for result in result_dict])
+        zdrift_dict = {}
+        for plane_id in plane_ids:
+            result = [result for result in result_dict if result['plane_id'] == plane_id][0]
+            zdrift_dict[plane_id] = result
+    else:
+        zdrift_dict = {}
+        for path_to_plane in raw_path_to_all_planes:
+            plane_id = int(path_to_plane.name.split('_')[-1])
+            zdrift_dict[plane_id] = calc_zdrift(path_to_plane, **zdrift_kwargs)
     return zdrift_dict
 
 
-def calc_zdrift(processed_plane_path: Path, 
-                raw_plane_path: Path,
+def calc_zdrift(raw_plane_path: Path,
                 use_clahe=True, 
                 use_valid_pix=True, 
                 ):
@@ -64,8 +89,6 @@ def calc_zdrift(processed_plane_path: Path,
 
     Parameters
     ----------
-    processed_plane_path : Path
-        Path to the processed plane directory
     raw_plane_path : Path
         Path to the raw plane directory
     save_dir : Path
@@ -86,6 +109,15 @@ def calc_zdrift(processed_plane_path: Path,
         Results and options for calculating z-drift
     """
     # valid_threshold = 0.01  # TODO: find the best valid threshold
+    # find processed plane path from raw plane path
+    if isinstance(raw_plane_path, str):
+        raw_plane_path = Path(raw_plane_path)
+    plane_id = raw_plane_path.stem
+    session_name = raw_plane_path.parent.parent.stem
+    processed_path = list(raw_plane_path.parent.parent.parent.glob(f'{session_name}_processed_*'))
+    assert len(processed_path) == 1
+    processed_path = processed_path[0]
+    processed_plane_path = processed_path / plane_id
 
     # to remove rolling effect from motion correction
     range_y, range_x = utils.get_motion_correction_crop_xy_range(
@@ -140,7 +172,8 @@ def calc_zdrift(processed_plane_path: Path,
     center_z = number_of_z_planes // 2
     zdrift_um = z_step * (matched_plane_indices - center_z)
 
-    results = {'zdrift_um': zdrift_um,
+    results = {'plane_id': plane_id,
+                'zdrift_um': zdrift_um,
                 'matched_plane_indices': matched_plane_indices,
                 'corrcoef': corrcoef,
                 'segment_fov_registered': segment_reg_imgs,
