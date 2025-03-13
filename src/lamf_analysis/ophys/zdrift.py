@@ -5,6 +5,7 @@ from typing import Union
 import skimage
 import scipy
 import cv2
+import matplotlib.pyplot as plt
 
 import lamf_analysis.utils as utils
 import lamf_analysis.ophys.zstack as zstack
@@ -173,7 +174,7 @@ def fov_stack_register_phase_correlation(fov, stack, use_clahe=True, use_valid_p
     np.array (1d)
         correlation coefficient between the registered fov and the stack in each plane
     list
-        list of translation shifts
+        list of translation shifts (y,x)
     """
     assert len(fov.shape) == 2
     assert len(stack.shape) == 3
@@ -274,3 +275,107 @@ def image_normalization(image, im_thresh=0, dtype=np.uint16):
     image_dtype = ((norm_image + 0.05) *
                     np.iinfo(np.uint16).max * 0.9).astype(dtype)
     return image_dtype
+
+
+
+###############################################################
+## QC plots for z-drift
+def plot_session_zdrift(result, ax=None, cc_threshold=0.65):
+    """Plot z-drift for all the segments in a session
+    Drift with peak correlation coefficient overlaid
+
+    Parameters
+    ----------
+    result : dict
+        Dictionary of z-drift results for each plane
+    """
+    if ax is None:
+        fig, ax = plt.subplots(1, 1, figsize=(4, 3))
+    zdrift_um = result['zdrift_um']
+    max_cc = np.array([max(cc) for cc in result['corrcoef']])
+
+    # # test
+    # max_cc = np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.65, 0.7, 0.8, 0.9, 0.95])
+    
+    ax.plot(zdrift_um, color='black', zorder=1)
+    
+    # split color by correlation coefficient
+    h1 = ax.scatter(np.arange(len(max_cc)), zdrift_um, c=max_cc, s=50,
+                cmap='binary', vmin=cc_threshold, vmax=1,
+                edgecolors='black', linewidth=0.5, zorder=2)
+    under_threshold_ind = np.where(max_cc < cc_threshold)[0]
+    if len(under_threshold_ind) > 0:
+        has_low_cc = 1
+        h2 = ax.scatter(under_threshold_ind, zdrift_um[under_threshold_ind], s=50,
+                        c=max_cc[under_threshold_ind], cmap='Reds_r', vmin=0, vmax=cc_threshold,
+                        edgecolors='red', linewidth=0.5, zorder=3)
+    else:
+        ylim = ax.get_ybound()
+        xlim = ax.get_xbound()
+        h2 = ax.scatter(xlim[0] - 1, ylim[0] - 1, c=0,
+                        cmap='Reds_r', vmin=0, vmax=cc_threshold)
+        ax.set_ylim(ylim)
+        ax.set_xlim(xlim)
+
+    cax1 = fig.add_axes([ax.get_position().x1 + 0.01,
+                        ax.get_position().y0 + (ax.get_position().height) * cc_threshold,
+                        0.02,
+                        ax.get_position().height * (1 - cc_threshold)])
+    bar1 = plt.colorbar(h1, cax=cax1)
+    bar1.set_label('Correlation coefficient')
+    bar1.ax.yaxis.set_label_coords(6, -0.5)
+
+    cax2 = fig.add_axes([ax.get_position().x1 + 0.01,
+                    ax.get_position().y0,
+                    0.02,
+                    ax.get_position().height * cc_threshold])
+    plt.colorbar(h2, cax=cax2)
+    
+    ax.set_xlabel('Segment')
+    ax.set_ylabel('Z-drift (um)')
+    plt.show()
+    return ax
+
+
+def plot_shifts(result, ax=None):
+    """Plot shifts at the matched depth for all the segments in a session
+    Both in x-y
+
+    Parameters
+    ----------
+    result : dict
+        Dictionary of z-drift results for each plane
+    """
+    if ax is None:
+        fig, ax = plt.subplots(1, 1, figsize=(4, 3))
+    max_cc_inds = np.array([np.argmax(cc) for cc in result['corrcoef']])        
+    shifts = [result['shift'][i][max_cc_inds[i]] for i in range(len(max_cc_inds))]
+    y_shift = [shift[0] for shift in shifts]
+    x_shift = [shift[1] for shift in shifts]
+    ax.plot(y_shift, color='c', label='y-shift')
+    ax.plot(x_shift, color='m', label='x-shift')
+    ax.set_xlabel('Segment')
+    ax.set_ylabel('Shift (pix)')
+    ax.set_ylim(-512, 512)
+    ax.legend()
+    plt.show()
+    return ax
+
+
+def plot_correlation_coefficients(result, ax=None):
+    """Plot correlation coefficients for all the segments in a session
+
+    Parameters
+    ----------
+    result : dict
+        Dictionary of z-drift results for each plane
+    """
+    if ax is None:
+        fig, ax = plt.subplots(1, 1, figsize=(4, 3))
+    for i, cc in enumerate(result['corrcoef']):
+        ax.plot(cc, label=f'Seg #{i}')
+    ax.set_xlabel('Zstack plane index')
+    ax.set_ylabel('Correlation coefficient')
+    ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.show()
+    return ax
