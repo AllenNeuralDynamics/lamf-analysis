@@ -1,6 +1,7 @@
 
 from pathlib import Path
 import os
+import sys
 import h5py
 import numpy as np
 import json
@@ -10,6 +11,23 @@ import scipy
 import pandas as pd
 import cv2
 from aind_ophys_utils.motion_border_utils import get_max_correction_from_df
+
+import ray
+os.environ["RAY_verbose_spill_logs"] = "0"
+
+def initialize_ray(spill_dir="/root/capsule/scratch/ray",
+                    base_dir='/root/capsule/code'):
+    """ Initialize ray """
+    sys.path.append(base_dir)
+    exclude_files = [str(v.relative_to(Path(base_dir))) for v in Path(base_dir).rglob("*.ipynb")]
+
+    ray.init(ignore_reinit_error=True,
+            _temp_dir=spill_dir,
+            object_store_memory=(2**10)**3 * 4,
+            _system_config={"object_spilling_config": f'{{"type":"filesystem","params":{{"directory_path":"{spill_dir}"}}}}'},
+            runtime_env={"working_dir": base_dir,
+                        "excludes": exclude_files})
+
 
 ####################################################################################################
 # Code Ocean: Ophys
@@ -46,9 +64,17 @@ def plane_paths_from_session(session_path: Union[Path, str],
     session_path = Path(session_path)
     if data_level == "processed":
         planes = [x for x in session_path.iterdir() if x.is_dir()]
-        planes = [x for x in planes if 'nextflow' not in x.name]
+        planes = [x for x in planes if ('nextflow' not in x.name) and ('nwb' not in x.name)]
     elif data_level == "raw":
-        planes = list((session_path / 'ophys').glob('ophys_experiment_*'))
+        raw_ophys_folder_name_bases = ['ophys', 'pophys', 'mpophys']
+        for raw_ophys_folder_name_base in raw_ophys_folder_name_bases:
+            raw_ophys_folder = session_path / raw_ophys_folder_name_base
+            if raw_ophys_folder.exists():
+                break
+            else:
+                raw_ophys_folder = None
+        if raw_ophys_folder is not None:
+            planes = [x for x in raw_ophys_folder.iterdir() if x.is_dir()] # could be none for those uploaded directly from rig
     return planes
 
 
@@ -83,10 +109,17 @@ def get_motion_correction_crop_xy_range(plane_path: Union[Path, str]) -> tuple:
         '*_motion_transform.csv'))[0]
     motion_df = pd.read_csv(motion_csv)
 
-    motion_border = get_max_correction_from_df(motion_df, max_shift=512*max_shift_prop)
-    
-    range_y = [motion_border.down, motion_border.up]
-    range_x = [motion_border.left, motion_border.right]
+    max_shift=512*max_shift_prop
+    motion_border = get_max_correction_from_df(motion_df, max_shift=max_shift)
+    assert motion_border.down >= 0
+    assert motion_border.up >= 0
+    assert motion_border.left >= 0
+    assert motion_border.right >= 0
+    up = 512 if motion_border.up == 0 else -motion_border.up
+    right = 512 if motion_border.right == 0 else -motion_border.right
+
+    range_y = [int(motion_border.down), int(up)]
+    range_x = [int(motion_border.left), int(right)]
 
     # max_y = np.ceil(max(motion_df.y.max(), 1)).astype(int)
     # min_y = np.floor(min(motion_df.y.min(), 0)).astype(int)

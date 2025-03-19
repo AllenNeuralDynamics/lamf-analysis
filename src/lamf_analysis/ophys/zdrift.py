@@ -5,6 +5,11 @@ from typing import Union
 import skimage
 import scipy
 import cv2
+import matplotlib.pyplot as plt
+import ray
+import sys
+import os
+os.environ["RAY_verbose_spill_logs"] = "0"
 
 import lamf_analysis.utils as utils
 import lamf_analysis.ophys.zstack as zstack
@@ -22,32 +27,52 @@ import lamf_analysis.ophys.zstack as zstack
 # Session to session matching by using zstack to zstack registration (implemented in a different file) 
 ###############################################################
 
-def zdrift_for_session_planes(session_path: Union[Path, str],
+def zdrift_for_session_planes(raw_path: Union[Path, str],
+                              parallel: bool = True,
                               **zdrift_kwargs) -> dict:
     """Get z-drift for all the planes in a session
     Parameters
     ----------
-    session_path : Path
-        Path to the session directory
+    raw_path : Path
+        Path to the raw session directory
     zdrift_kwargs : dict
-        Arguments for calc_zdrift
+        Arguments for calc_zdrift (use_clahe and use_valid_pix)
 
     Returns
     -------
     dict
         Dictionary of z-drift for each plane
     """
-    path_to_all_planes = utils.plane_paths_from_session(session_path, data_level="processed")
+    raw_path_to_all_planes = utils.plane_paths_from_session(raw_path,
+                                                        data_level="raw")
 
-    zdrift_dict = {}
-    for path_to_plane in path_to_all_planes:
-        plane_id = int(path_to_plane.name.split('_')[-1])
-        zdrift_dict[plane_id] = calc_zdrift(path_to_plane, **zdrift_kwargs)
+    if parallel:
+        if not ray.is_initialized():
+            utils.initialize_ray()
+            ray_shutdown = True
+        else:
+            ray_shutdown = False
+        futures = []
+        for path_to_plane in raw_path_to_all_planes:
+            futures.append(ray.remote(calc_zdrift).remote(path_to_plane, **zdrift_kwargs))
+        result_dict = ray.get(futures)
+        
+        plane_ids = np.sort([result['plane_id'] for result in result_dict])
+        zdrift_dict = {}
+        for plane_id in plane_ids:
+            result = [result for result in result_dict if result['plane_id'] == plane_id][0]
+            zdrift_dict[plane_id] = result
+        if ray_shutdown:
+            ray.shutdown()
+    else:
+        zdrift_dict = {}
+        for path_to_plane in raw_path_to_all_planes:
+            plane_id = int(path_to_plane.name.split('_')[-1])
+            zdrift_dict[plane_id] = calc_zdrift(path_to_plane, **zdrift_kwargs)
     return zdrift_dict
 
 
-def calc_zdrift(movie_dir: Path, 
-                reference_stack_path: Path,
+def calc_zdrift(raw_plane_path: Path,
                 use_clahe=True, 
                 use_valid_pix=True, 
                 ):
@@ -63,10 +88,8 @@ def calc_zdrift(movie_dir: Path,
 
     Parameters
     ----------
-    movie_dir : Path
-        Path to the movie directory (should be "decrosstalk" dir)
-    reference_stack_path : Path
-        Path to the reference stack
+    raw_plane_path : Path
+        Path to the raw plane directory
     save_dir : Path
         Path to save the result
     segment_minute : int, optional
@@ -85,25 +108,46 @@ def calc_zdrift(movie_dir: Path,
         Results and options for calculating z-drift
     """
     # valid_threshold = 0.01  # TODO: find the best valid threshold
-
-    save_dir = Path(save_dir)
+    # find processed plane path from raw plane path
+    if isinstance(raw_plane_path, str):
+        raw_plane_path = Path(raw_plane_path)
+    plane_id = raw_plane_path.stem
+    session_name = raw_plane_path.parent.parent.stem
+    processed_path = list(raw_plane_path.parent.parent.parent.glob(f'{session_name}_processed_*'))
+    assert len(processed_path) == 1
+    processed_path = processed_path[0]
+    processed_plane_path = processed_path / plane_id
 
     # to remove rolling effect from motion correction
     range_y, range_x = utils.get_motion_correction_crop_xy_range(
-        movie_dir)  
+        processed_plane_path)
 
     # Get reference z-stack and crop
     # TODO: it should be processed first in the pipeline, and this part of code 
     # should just retrieve the processed (decrosstalked & registered) z-stack
-    ref_zstack = zstack.register_local_z_stack(reference_stack_path)
+
+    # TODO: the following code does not work with data uploaded from rig
+    # z-stack splitting and saving to h5 should be done first
+    try:
+        local_zstack_path = list(raw_plane_path.glob('*_z_stack_local.h5'))[0]
+    except:
+        raise FileNotFoundError('Local z-stack not found')
+    ref_zstack = zstack.register_local_z_stack(local_zstack_path)
     ref_zstack_crop = ref_zstack[:, range_y[0]:range_y[1], range_x[0]:range_x[1]]
+
+    si_metadata, roi_groups = zstack.local_zstack_metadata(local_zstack_path)
+    number_of_z_planes= int(si_metadata['SI.hStackManager.actualNumSlices'])
+    # number_of_repeats = int(si_metadata['SI.hStackManager.actualNumVolumes'])
+    z_step = float(si_metadata['SI.hStackManager.actualStackZStepSize'])
 
     # Get preprocessed z-stack
     stack_pre = med_filt_z_stack(ref_zstack_crop)
     stack_pre = rolling_average_stack(stack_pre)
 
     # Get episodic mean FOVs (emf) and crop
-    emf_h5_fn = list(Path(movie_dir).glob('*_decrosstalk_episodic_mean_fov.h5'))[0]
+    # TODO: make the mean FOV movie with finer time resolution
+    decrosstalk_dir = processed_plane_path / 'decrosstalk'
+    emf_h5_fn = list(Path(decrosstalk_dir).glob('*_decrosstalk_episodic_mean_fov.h5'))[0]
     with h5py.File(emf_h5_fn, 'r') as h:
         episodic_mean_fovs = h['data'][:]
     episodic_mean_fovs_crop = episodic_mean_fovs[:, range_y[0]:range_y[1], range_x[0]:range_x[1]]
@@ -124,13 +168,18 @@ def calc_zdrift(movie_dir: Path,
         shift_list.append(shift)
     corrcoef = np.asarray(corrcoef)
 
-    results = {'matched_plane_indices': matched_plane_indices,
-                   'corrcoef': corrcoef,
-                   'segment_fov_registered': segment_reg_imgs,
-                   'ref_zstack_crop': ref_zstack_crop,                   
-                   'shift': shift_list,
-                   'use_clahe': use_clahe,
-                   'use_valid_pix': use_valid_pix}
+    center_z = number_of_z_planes // 2
+    zdrift_um = z_step * (matched_plane_indices - center_z)
+
+    results = {'plane_id': plane_id,
+                'zdrift_um': zdrift_um,
+                'matched_plane_indices': matched_plane_indices,
+                'corrcoef': corrcoef,
+                'segment_fov_registered': segment_reg_imgs,
+                'ref_zstack_crop': ref_zstack_crop,                   
+                'shift': shift_list,
+                'use_clahe': use_clahe,
+                'use_valid_pix': use_valid_pix}
 
     return results
 
@@ -157,7 +206,7 @@ def fov_stack_register_phase_correlation(fov, stack, use_clahe=True, use_valid_p
     np.array (1d)
         correlation coefficient between the registered fov and the stack in each plane
     list
-        list of translation shifts
+        list of translation shifts (y,x)
     """
     assert len(fov.shape) == 2
     assert len(stack.shape) == 3
@@ -258,3 +307,110 @@ def image_normalization(image, im_thresh=0, dtype=np.uint16):
     image_dtype = ((norm_image + 0.05) *
                     np.iinfo(np.uint16).max * 0.9).astype(dtype)
     return image_dtype
+
+
+
+###############################################################
+## QC plots for z-drift
+def plot_session_zdrift(result, ax=None, cc_threshold=0.65,
+                        add_colorbar=True):
+    """Plot z-drift for all the segments in a session
+    Drift with peak correlation coefficient overlaid
+
+    Parameters
+    ----------
+    result : dict
+        Dictionary of z-drift results for each plane
+    """
+    if ax is None:
+        fig, ax = plt.subplots(1, 1, figsize=(4, 3))
+    else:
+        fig = ax.get_figure()
+    zdrift_um = result['zdrift_um']
+    max_cc = np.array([max(cc) for cc in result['corrcoef']])
+
+    # # test
+    # max_cc = np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.65, 0.7, 0.8, 0.9, 0.95])
+    
+    ax.plot(zdrift_um, color='black', zorder=1)
+    
+    # split color by correlation coefficient
+    h1 = ax.scatter(np.arange(len(max_cc)), zdrift_um, c=max_cc, s=50,
+                cmap='binary', vmin=cc_threshold, vmax=1,
+                edgecolors='black', linewidth=0.5, zorder=2)
+    under_threshold_ind = np.where(max_cc < cc_threshold)[0]
+    if len(under_threshold_ind) > 0:
+        has_low_cc = 1
+        h2 = ax.scatter(under_threshold_ind, zdrift_um[under_threshold_ind], s=50,
+                        c=max_cc[under_threshold_ind], cmap='Reds_r', vmin=0, vmax=cc_threshold,
+                        edgecolors='red', linewidth=0.5, zorder=3)
+    else:
+        ylim = ax.get_ybound()
+        xlim = ax.get_xbound()
+        h2 = ax.scatter(xlim[0] - 1, ylim[0] - 1, c=0,
+                        cmap='Reds_r', vmin=0, vmax=cc_threshold)
+        ax.set_ylim(ylim)
+        ax.set_xlim(xlim)
+    
+    ax.set_xlabel('Segment')
+    ax.set_ylabel('Z-drift (um)')
+
+    if add_colorbar:
+        cax1 = fig.add_axes([ax.get_position().x1 + 0.01,
+                            ax.get_position().y0 + (ax.get_position().height) * cc_threshold,
+                            0.02,
+                            ax.get_position().height * (1 - cc_threshold)])
+        bar1 = plt.colorbar(h1, cax=cax1)
+        bar1.set_label('Correlation coefficient')
+        bar1.ax.yaxis.set_label_coords(6, -0.5)
+
+        cax2 = fig.add_axes([ax.get_position().x1 + 0.01,
+                        ax.get_position().y0,
+                        0.02,
+                        ax.get_position().height * cc_threshold])
+        plt.colorbar(h2, cax=cax2)
+    return ax
+
+
+def plot_shifts(result, ax=None):
+    """Plot shifts at the matched depth for all the segments in a session
+    Both in x-y
+
+    Parameters
+    ----------
+    result : dict
+        Dictionary of z-drift results for each plane
+    """
+    if ax is None:
+        fig, ax = plt.subplots(1, 1, figsize=(4, 3))
+    max_cc_inds = np.array([np.argmax(cc) for cc in result['corrcoef']])        
+    shifts = [result['shift'][i][max_cc_inds[i]] for i in range(len(max_cc_inds))]
+    y_shift = [shift[0] for shift in shifts]
+    x_shift = [shift[1] for shift in shifts]
+    ax.plot(y_shift, color='c', label='y-shift')
+    ax.plot(x_shift, color='m', label='x-shift')
+    ax.set_xlabel('Segment')
+    ax.set_ylabel('Shift (pix)')
+    ax.set_ylim(-512, 512)
+    ax.legend()
+    # plt.show()
+    return ax
+
+
+def plot_correlation_coefficients(result, ax=None):
+    """Plot correlation coefficients for all the segments in a session
+
+    Parameters
+    ----------
+    result : dict
+        Dictionary of z-drift results for each plane
+    """
+    if ax is None:
+        fig, ax = plt.subplots(1, 1, figsize=(4, 3))
+    for i, cc in enumerate(result['corrcoef']):
+        ax.plot(cc, label=f'Seg #{i}')
+    ax.set_xlabel('Zstack plane index')
+    ax.set_ylabel('Correlation coefficient')
+    ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    # plt.show()
+    return ax
