@@ -27,6 +27,38 @@ def check_ophys_folder(path):
 
     return ophys_folder
 
+def plane_paths_from_session(session_path: Union[Path, str],
+                             data_level: str = "raw") -> list:
+    """Get plane paths from a session directory
+
+    Parameters
+    ----------
+    session_path : Union[Path, str]
+        Path to the session directory
+    data_level : str, optional
+        Data level, by default "raw". Options: "raw", "processed"
+
+    Returns
+    -------
+    list
+        List of plane paths
+    """
+    session_path = Path(session_path)
+    if data_level == "processed":
+        planes = [x for x in session_path.iterdir() if x.is_dir()]
+        planes = [x for x in planes if ('nextflow' not in x.name) and ('nwb' not in x.name)]
+    elif data_level == "raw":
+        raw_ophys_folder_name_bases = ['ophys', 'pophys', 'mpophys']
+        for raw_ophys_folder_name_base in raw_ophys_folder_name_bases:
+            raw_ophys_folder = session_path / raw_ophys_folder_name_base
+            if raw_ophys_folder.exists():
+                break
+            else:
+                raw_ophys_folder = None
+        if raw_ophys_folder is not None:
+            planes = [x for x in raw_ophys_folder.iterdir() if x.is_dir()] # could be none for those uploaded directly from rig
+    return planes
+    
 
 def get_motion_correction_crop_xy_range(plane_path: Union[Path, str]) -> tuple:
     """Get x-y ranges to crop motion-correction frame rolling
