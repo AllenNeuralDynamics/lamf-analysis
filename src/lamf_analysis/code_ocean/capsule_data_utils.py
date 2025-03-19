@@ -48,6 +48,7 @@ def get_mouse_session_df(mouse_id,
                          include_pupil=True):
     success = True
     mouse_sessions = aind_session.get_sessions(subject_id=mouse_id)
+    # to prevent errors (happens when adding faulty tags)
     mouse_sessions = tuple([ms for ms in mouse_sessions if ms.subject_id == str(mouse_id)])
 
     raw_data_date_list = []
