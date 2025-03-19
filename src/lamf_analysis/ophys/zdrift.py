@@ -47,24 +47,23 @@ def zdrift_for_session_planes(raw_path: Union[Path, str],
                                                         data_level="raw")
 
     if parallel:
-        spill_dir = "/root/capsule/scratch/ray"
-        sys.path.append('/root/capsule/code')  
-        ray.init(ignore_reinit_error=True,
-                _temp_dir=spill_dir,
-                object_store_memory=(2**10)**3 * 4,
-                _system_config={"object_spilling_config": f'{{"type":"filesystem","params":{{"directory_path":"{spill_dir}"}}}}'},
-                runtime_env={"working_dir": "/root/capsule/code",
-                             "excludes": list(Path('/root/capsule/code').rglob('*.ipynb'))})
+        if not ray.is_initialized():
+            utils.initialize_ray()
+            ray_shutdown = True
+        else:
+            ray_shutdown = False
         futures = []
         for path_to_plane in raw_path_to_all_planes:
             futures.append(ray.remote(calc_zdrift).remote(path_to_plane, **zdrift_kwargs))
         result_dict = ray.get(futures)
-        ray.shutdown()
+        
         plane_ids = np.sort([result['plane_id'] for result in result_dict])
         zdrift_dict = {}
         for plane_id in plane_ids:
             result = [result for result in result_dict if result['plane_id'] == plane_id][0]
             zdrift_dict[plane_id] = result
+        if ray_shutdown:
+            ray.shutdown()
     else:
         zdrift_dict = {}
         for path_to_plane in raw_path_to_all_planes:
@@ -313,7 +312,8 @@ def image_normalization(image, im_thresh=0, dtype=np.uint16):
 
 ###############################################################
 ## QC plots for z-drift
-def plot_session_zdrift(result, ax=None, cc_threshold=0.65):
+def plot_session_zdrift(result, ax=None, cc_threshold=0.65,
+                        add_colorbar=True):
     """Plot z-drift for all the segments in a session
     Drift with peak correlation coefficient overlaid
 
@@ -324,6 +324,8 @@ def plot_session_zdrift(result, ax=None, cc_threshold=0.65):
     """
     if ax is None:
         fig, ax = plt.subplots(1, 1, figsize=(4, 3))
+    else:
+        fig = ax.get_figure()
     zdrift_um = result['zdrift_um']
     max_cc = np.array([max(cc) for cc in result['corrcoef']])
 
@@ -349,24 +351,24 @@ def plot_session_zdrift(result, ax=None, cc_threshold=0.65):
                         cmap='Reds_r', vmin=0, vmax=cc_threshold)
         ax.set_ylim(ylim)
         ax.set_xlim(xlim)
-
-    cax1 = fig.add_axes([ax.get_position().x1 + 0.01,
-                        ax.get_position().y0 + (ax.get_position().height) * cc_threshold,
-                        0.02,
-                        ax.get_position().height * (1 - cc_threshold)])
-    bar1 = plt.colorbar(h1, cax=cax1)
-    bar1.set_label('Correlation coefficient')
-    bar1.ax.yaxis.set_label_coords(6, -0.5)
-
-    cax2 = fig.add_axes([ax.get_position().x1 + 0.01,
-                    ax.get_position().y0,
-                    0.02,
-                    ax.get_position().height * cc_threshold])
-    plt.colorbar(h2, cax=cax2)
     
     ax.set_xlabel('Segment')
     ax.set_ylabel('Z-drift (um)')
-    plt.show()
+
+    if add_colorbar:
+        cax1 = fig.add_axes([ax.get_position().x1 + 0.01,
+                            ax.get_position().y0 + (ax.get_position().height) * cc_threshold,
+                            0.02,
+                            ax.get_position().height * (1 - cc_threshold)])
+        bar1 = plt.colorbar(h1, cax=cax1)
+        bar1.set_label('Correlation coefficient')
+        bar1.ax.yaxis.set_label_coords(6, -0.5)
+
+        cax2 = fig.add_axes([ax.get_position().x1 + 0.01,
+                        ax.get_position().y0,
+                        0.02,
+                        ax.get_position().height * cc_threshold])
+        plt.colorbar(h2, cax=cax2)
     return ax
 
 
@@ -391,7 +393,7 @@ def plot_shifts(result, ax=None):
     ax.set_ylabel('Shift (pix)')
     ax.set_ylim(-512, 512)
     ax.legend()
-    plt.show()
+    # plt.show()
     return ax
 
 
@@ -410,5 +412,5 @@ def plot_correlation_coefficients(result, ax=None):
     ax.set_xlabel('Zstack plane index')
     ax.set_ylabel('Correlation coefficient')
     ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-    plt.show()
+    # plt.show()
     return ax

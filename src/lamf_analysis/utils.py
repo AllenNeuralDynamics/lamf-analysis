@@ -1,6 +1,7 @@
 
 from pathlib import Path
 import os
+import sys
 import h5py
 import numpy as np
 import json
@@ -10,6 +11,23 @@ import scipy
 import pandas as pd
 import cv2
 from aind_ophys_utils.motion_border_utils import get_max_correction_from_df
+
+import ray
+os.environ["RAY_verbose_spill_logs"] = "0"
+
+def initialize_ray(spill_dir="/root/capsule/scratch/ray",
+                    base_dir='/root/capsule/code'):
+    """ Initialize ray """
+    sys.path.append(base_dir)
+    exclude_files = [str(v.relative_to(Path(base_dir))) for v in Path(base_dir).rglob("*.ipynb")]
+
+    ray.init(ignore_reinit_error=True,
+            _temp_dir=spill_dir,
+            object_store_memory=(2**10)**3 * 4,
+            _system_config={"object_spilling_config": f'{{"type":"filesystem","params":{{"directory_path":"{spill_dir}"}}}}'},
+            runtime_env={"working_dir": base_dir,
+                        "excludes": exclude_files})
+
 
 ####################################################################################################
 # Code Ocean: Ophys
