@@ -5,12 +5,15 @@ import warnings
 import json
 import glob
 from pathlib import Path
+import h5py
 
 from codeocean import CodeOcean
 from codeocean.data_asset import DataAssetSearchParams
 import aind_session
 from aind_ophys_data_access import capsule
 from comb.behavior_ophys_dataset import BehaviorOphysDataset, BehaviorMultiplaneOphysDataset
+from aind_ophys_data_access import rois
+from comb import file_handling
 
 from lamf_analysis.code_ocean import capsule_bod_utils as cbu
 
@@ -159,7 +162,8 @@ def get_session_info(mouse_id, data_dir='/root/capsule/data'):
                         ('stimuli' not in d.split('/')[-1]) and
                         ('stim-response' not in d.split('/')[-1]) and
                         ('ROICat' not in d.split('/')[-1]) and
-                        (str(mouse_id) in d.split('/')[-1])])
+                        (str(mouse_id) in d.split('/')[-1]) and
+                        ('zstack' not in d.split('/')[-1])])
 
     session_names = [d.split('/')[-1] for d in raw_paths]
     session_keys = ['_'.join(sn.split('_')[1:3]) for sn in session_names]
@@ -357,3 +361,49 @@ def load_plane_data(session_name, opid=None, opid_ind=None, data_dir='/root/caps
     
     return bod
 
+
+def load_decrosstalked_mean_image(session_key, plane_id,
+                                    data_dir = Path('/root/capsule/data')):
+    ''' Load decrosstalked mean image for a given session and plane ID
+    It can be retrieved from extraction folder.
+    Faster than loading COMB object.
+    '''
+    if isinstance(data_dir, str):
+        data_dir = Path(data_dir)
+    processed_list = list(data_dir.glob(f'multiplane-ophys_{session_key}*processed*'))
+    assert len(processed_list) == 1, f'Multiple processed data found for {session_key}'
+    processed_path = processed_list[0]
+    plane_path = processed_path / plane_id
+    if not os.path.isdir(plane_path):
+        raise ValueError(f'No processed data found for {session_key}_{plane_id}')
+    extraction_path = plane_path / 'extraction'
+    h5_fn = extraction_path / f'{plane_id}_extraction.h5'
+    with h5py.File(h5_fn, 'r') as h:
+        mean_img = h['meanImg'][:]
+    return mean_img
+
+
+def get_roi_table_from_h5(session_key, plane_id,
+                    data_dir = Path('/root/capsule/data')):
+    ''' Load ROI table for a given session and plane ID
+    It can be retrieved from extraction folder.
+    Faster than loading COMB object.
+
+    Filtering NOT applied.
+    # TODO: apply filtering?
+    '''
+    if isinstance(data_dir, str):
+        data_dir = Path(data_dir)
+    processed_list = list(data_dir.glob(f'multiplane-ophys_{session_key}*processed*'))
+    assert len(processed_list) == 1, f'Multiple processed data found for {session_key}'
+    processed_path = processed_list[0]
+    plane_path = processed_path / plane_id
+    if not os.path.isdir(plane_path):
+        raise ValueError(f'No processed data found for {session_key}_{plane_id}')
+    extraction_path = plane_path / 'extraction'
+    extraction_fn = extraction_path / f'{plane_id}_extraction.h5'
+    pixel_masks = file_handling.load_sparse_array(extraction_fn)
+            
+    roi_table = rois.roi_table_from_mask_arrays(pixel_masks)
+    roi_table = roi_table.rename(columns={'id': 'cell_roi_id'})
+    return roi_table
