@@ -12,6 +12,8 @@ import pandas as pd
 import cv2
 from aind_ophys_utils.motion_border_utils import get_max_correction_from_df
 
+from lamf_analysis.code_ocean import capsule_data_utils as cdu
+
 import ray
 os.environ["RAY_verbose_spill_logs"] = "0"
 
@@ -109,14 +111,19 @@ def get_motion_correction_crop_xy_range(plane_path: Union[Path, str]) -> tuple:
         '*_motion_transform.csv'))[0]
     motion_df = pd.read_csv(motion_csv)
 
-    max_shift=512*max_shift_prop
+    session_json = cdu.get_session_json_from_plane_path(plane_path)
+    fov_info = session_json['data_streams'][0]['ophys_fovs'][0] # assume this data is the same for all fovs
+    fov_height = fov_info['fov_height']
+    fov_width = fov_info['fov_width']
+
+    max_shift = max(fov_height, fov_width) * max_shift_prop
     motion_border = get_max_correction_from_df(motion_df, max_shift=max_shift)
     assert motion_border.down >= 0
     assert motion_border.up >= 0
     assert motion_border.left >= 0
     assert motion_border.right >= 0
-    up = 512 if motion_border.up == 0 else -motion_border.up
-    right = 512 if motion_border.right == 0 else -motion_border.right
+    up = fov_height if motion_border.up == 0 else fov_height - motion_border.up
+    right = fov_width if motion_border.right == 0 else fov_width - motion_border.right
 
     range_y = [int(motion_border.down), int(up)]
     range_x = [int(motion_border.left), int(right)]

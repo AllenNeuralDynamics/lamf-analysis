@@ -47,10 +47,10 @@ def get_roi_df_with_valid_roi(bod_or_path, small_roi_radius_threshold_in_um=4):
             fov_info = session_json['data_streams'][0]['ophys_fovs'][0] # assume this data is the same for all fovs
             fov_height = fov_info['fov_height']
             fov_width = fov_info['fov_width']
-            fov_scale_factor = fov_info['fov_scale_factor']
+            fov_scale_factor = float(fov_info['fov_scale_factor'])
         range_y, range_x = lamf_utils.get_motion_correction_crop_xy_range(plane_path)
-        range_y = [int(range_y[0]), -int(range_y[1])]
-        range_x = [int(range_x[0]), -int(range_x[1])]
+        # range_y = [int(range_y[0]), -int(range_y[1])]
+        # range_x = [int(range_x[0]), -int(range_x[1])]
         
         on_mask = np.zeros((fov_height, fov_width), dtype=bool)
         on_mask[range_y[0]:range_y[1], range_x[0]:range_x[1]] = True
