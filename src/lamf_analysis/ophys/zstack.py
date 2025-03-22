@@ -19,7 +19,7 @@ import seaborn as sns
 import skimage
 from PIL import Image, ImageDraw, ImageFont
 from ScanImageTiffReader import ScanImageTiffReader
-from tifffile import TiffFile, imread, imsave, imwrite
+from tifffile import TiffFile, imread, imwrite
 from tqdm import tqdm
 
 ####################################################################################################
