@@ -1,18 +1,23 @@
 import numpy as np
 import pandas as pd
 import scipy
+from pathlib import Path
 
 import lamf_analysis.utils as lamf_utils
+import lamf_analysis.code_ocean.capsule_data_utils as cdu
+from comb.behavior_ophys_dataset import BehaviorOphysDataset
 
 
-def get_roi_df_with_valid_roi(bod, small_roi_radius_threshold_in_um=4):
+def get_roi_df_with_valid_roi(bod_or_path, small_roi_radius_threshold_in_um=4):
     ''' Get roi_df with valid_roi column
     This also mutates bod.cell_specimen_table, so need to be run only once per bod loading
 
     Parameters
     ----------
-    bod : BehaviorOphysDataset
-        The behavior ophys dataset object.
+    bod_or_path : BehaviorOphysDataset or Union[str, Path]
+        The behavior ophys dataset object, or path to the plane.
+        When path is given, is much faster.
+        BOD can be used if it was already generated.
     small_roi_radius_threshold_in_um : float
         The threshold for small roi in um^2
 
@@ -21,16 +26,33 @@ def get_roi_df_with_valid_roi(bod, small_roi_radius_threshold_in_um=4):
     cell_specimen_table : pd.DataFrame
         The cell_specimen_table with valid_roi column
     '''
-    cell_specimen_table = bod.cell_specimen_table
+    if isinstance(bod_or_path, str):
+        bod_or_path = Path(bod_or_path)
+    if isinstance(bod_or_path, Path):
+        cell_specimen_table = cdu.get_roi_table_from_plane_path(bod_or_path)
+    elif isinstance(bod_or_path, BehaviorOphysDataset):
+        cell_specimen_table = bod_or_path.cell_specimen_table
     if np.array([k in cell_specimen_table.columns for k in ['touching_motion_border', 'small_roi', 'valid_roi']]).all():
         return cell_specimen_table
     else:
-        plane_path = bod.metadata['plane']['plane_path']
+        # gather relevant metadata
+        if isinstance(bod_or_path, BehaviorOphysDataset):
+            plane_path = bod.metadata['plane']['plane_path']
+            fov_height = bod.metadata['plane']['fov_height']
+            fov_width = bod.metadata['plane']['fov_width']
+            fov_scale_factor = bod.metadata['plane']['fov_scale_factor']
+        else:
+            plane_path = bod_or_path
+            session_json = cdu.get_session_json_from_plane_path(plane_path)
+            fov_info = session_json['data_streams'][0]['ophys_fovs'][0] # assume this data is the same for all fovs
+            fov_height = fov_info['fov_height']
+            fov_width = fov_info['fov_width']
+            fov_scale_factor = fov_info['fov_scale_factor']
         range_y, range_x = lamf_utils.get_motion_correction_crop_xy_range(plane_path)
         range_y = [int(range_y[0]), -int(range_y[1])]
         range_x = [int(range_x[0]), -int(range_x[1])]
         
-        on_mask = np.zeros((bod.metadata['plane']['fov_height'], bod.metadata['plane']['fov_width']), dtype=bool)
+        on_mask = np.zeros((fov_height, fov_width), dtype=bool)
         on_mask[range_y[0]:range_y[1], range_x[0]:range_x[1]] = True
         motion_mask = ~on_mask
 
@@ -42,7 +64,7 @@ def get_roi_df_with_valid_roi(bod, small_roi_radius_threshold_in_um=4):
 
         cell_specimen_table['touching_motion_border'] = cell_specimen_table.apply(_touching_motion_border, axis=1, motion_mask=motion_mask)
         
-        small_roi_radius_threshold_in_pix = small_roi_radius_threshold_in_um / float(bod.metadata['plane']['fov_scale_factor'])
+        small_roi_radius_threshold_in_pix = small_roi_radius_threshold_in_um / float(fov_scale_factor)
         area_threshold = np.pi * (small_roi_radius_threshold_in_pix**2)
         
         cell_specimen_table['small_roi'] = cell_specimen_table['mask_matrix'].apply(lambda x: len(np.where(x)[0]) < area_threshold)

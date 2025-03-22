@@ -398,8 +398,20 @@ def get_roi_table_from_h5(session_key, plane_id,
     assert len(processed_list) == 1, f'Multiple processed data found for {session_key}'
     processed_path = processed_list[0]
     plane_path = processed_path / plane_id
+    roi_table = get_roi_table_from_plane_path(plane_path)
+    return roi_table
+
+
+def get_roi_table_from_plane_path(plane_path):
+    ''' Load ROI table for a given plane path
+    It can be retrieved from extraction folder.
+    Faster than loading COMB object.
+    '''
+    if isinstance(plane_path, str):
+        plane_path = Path(plane_path)
     if not os.path.isdir(plane_path):
-        raise ValueError(f'No processed data found for {session_key}_{plane_id}')
+        raise ValueError(f'Path not found ({plane_path})')
+    plane_id = plane_path.name
     extraction_path = plane_path / 'extraction'
     extraction_fn = extraction_path / f'{plane_id}_extraction.h5'
     pixel_masks = file_handling.load_sparse_array(extraction_fn)
@@ -407,3 +419,13 @@ def get_roi_table_from_h5(session_key, plane_id,
     roi_table = rois.roi_table_from_mask_arrays(pixel_masks)
     roi_table = roi_table.rename(columns={'id': 'cell_roi_id'})
     return roi_table
+
+def get_session_json_from_plane_path(plane_path):
+    ''' Load session.json for a given plane path
+    '''
+    session_name = plane_path.parent.name.split('_processed')[0]
+    raw_path = plane_path.parent.parent / session_name
+    session_json_fn = Path(raw_path) / 'session.json'
+    with open(session_json_fn) as f:
+        session_json = json.load(f)
+    return session_json
