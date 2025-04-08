@@ -23,7 +23,7 @@ def default_dlc_eye(json_output_path: str, batch_assets_list: list):
         List of lists of assets to include in the job.
         Outer list is batches, inner list is assets in a batch.
         Each batch will be run in parallel.
-        Example:
+        Example:Camk22-all
         [
             [{"id": "asset1", "mount": "a1"},
             {"id": "asset2", "mount": "a2"}],
@@ -68,9 +68,14 @@ def default_cortical_zstack_registration(json_output_path: str, batch_assets_lis
     """
     settings_dict = {
         "capsule_id": "c975fe83-f91d-457e-9e28-596e1e551790",
-        "tags": ["derived"],
+        "tags": ["derived", "multiplane-ophys"],
         "process_name_suffix": "cortical-zstack-reg",
-        "assets_list": batch_assets_list
+        "assets_list": batch_assets_list,
+        "custom_metadata": {
+            "data level": "derived",
+            "experiment type": "multiplane-ophys",
+            # NOTE: subject id is added in the jobs script
+        }
     }
 
     with open(json_output_path, 'w') as f:
