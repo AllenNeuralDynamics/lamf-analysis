@@ -6,10 +6,10 @@ import skimage
 import scipy
 import cv2
 import matplotlib.pyplot as plt
-import ray
 import sys
 import os
-os.environ["RAY_verbose_spill_logs"] = "0"
+import multiprocessing as mp
+from multiprocessing import Pool
 
 import lamf_analysis.utils as utils
 import lamf_analysis.ophys.zstack as zstack
@@ -47,23 +47,16 @@ def zdrift_for_session_planes(raw_path: Union[Path, str],
                                                         data_level="raw")
 
     if parallel:
-        if not ray.is_initialized():
-            utils.initialize_ray()
-            ray_shutdown = True
-        else:
-            ray_shutdown = False
-        futures = []
-        for path_to_plane in raw_path_to_all_planes:
-            futures.append(ray.remote(calc_zdrift).remote(path_to_plane, **zdrift_kwargs))
-        result_dict = ray.get(futures)
+        num_cores = mp.cpu_count()
+        with Pool(processes=num_cores) as pool:
+            process_args = [(path_to_plane, zdrift_kwargs) for path_to_plane in raw_path_to_all_planes]
+            result_dict = pool.starmap(calc_zdrift, process_args)
         
         plane_ids = np.sort([result['plane_id'] for result in result_dict])
         zdrift_dict = {}
         for plane_id in plane_ids:
             result = [result for result in result_dict if result['plane_id'] == plane_id][0]
             zdrift_dict[plane_id] = result
-        if ray_shutdown:
-            ray.shutdown()
     else:
         zdrift_dict = {}
         for path_to_plane in raw_path_to_all_planes:

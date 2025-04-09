@@ -1,4 +1,3 @@
-
 from pathlib import Path
 import os
 import sys
@@ -13,22 +12,6 @@ import cv2
 from aind_ophys_utils.motion_border_utils import get_max_correction_from_df
 
 from lamf_analysis.code_ocean import capsule_data_utils as cdu
-
-import ray
-os.environ["RAY_verbose_spill_logs"] = "0"
-
-def initialize_ray(spill_dir="/root/capsule/scratch/ray",
-                    base_dir='/root/capsule/code'):
-    """ Initialize ray """
-    sys.path.append(base_dir)
-    exclude_files = [str(v.relative_to(Path(base_dir))) for v in Path(base_dir).rglob("*.ipynb")]
-
-    ray.init(ignore_reinit_error=True,
-            _temp_dir=spill_dir,
-            object_store_memory=(2**10)**3 * 4,
-            _system_config={"object_spilling_config": f'{{"type":"filesystem","params":{{"directory_path":"{spill_dir}"}}}}'},
-            runtime_env={"working_dir": base_dir,
-                        "excludes": exclude_files})
 
 
 ####################################################################################################
@@ -46,6 +29,7 @@ def check_ophys_folder(path):
             ophys_folder = None
 
     return ophys_folder
+
 
 def plane_paths_from_session(session_path: Union[Path, str],
                              data_level: str = "raw") -> list:
@@ -128,12 +112,6 @@ def get_motion_correction_crop_xy_range(plane_path: Union[Path, str]) -> tuple:
     range_y = [int(motion_border.down), int(up)]
     range_x = [int(motion_border.left), int(right)]
 
-    # max_y = np.ceil(max(motion_df.y.max(), 1)).astype(int)
-    # min_y = np.floor(min(motion_df.y.min(), 0)).astype(int)
-    # max_x = np.ceil(max(motion_df.x.max(), 1)).astype(int)
-    # min_x = np.floor(min(motion_df.x.min(), 0)).astype(int)
-    # range_y = [-min_y, -max_y]
-    # range_x = [-min_x, -max_x]
     return range_y, range_x
 
 
