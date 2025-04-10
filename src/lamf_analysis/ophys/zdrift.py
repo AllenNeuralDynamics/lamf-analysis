@@ -71,6 +71,8 @@ def zdrift_for_session_planes(raw_path: Union[Path, str],
         for plane_id in plane_ids:
             result = [result for result in result_dict if result['plane_id'] == plane_id][0]
             zdrift_dict[plane_id] = result
+        if ray_shutdown:
+            ray.shutdown()
     else:
         zdrift_dict = {}
         for path_to_plane in raw_path_to_all_planes:
@@ -319,7 +321,8 @@ def image_normalization(image, im_thresh=0, dtype=np.uint16):
 
 ###############################################################
 ## QC plots for z-drift
-def plot_session_zdrift(result, ax=None, cc_threshold=0.65):
+def plot_session_zdrift(result, ax=None, cc_threshold=0.65,
+                        add_colorbar=True):
     """Plot z-drift for all the segments in a session
     Drift with peak correlation coefficient overlaid
 
@@ -330,6 +333,8 @@ def plot_session_zdrift(result, ax=None, cc_threshold=0.65):
     """
     if ax is None:
         fig, ax = plt.subplots(1, 1, figsize=(4, 3))
+    else:
+        fig = ax.get_figure()
     zdrift_um = result['zdrift_um']
     max_cc = np.array([max(cc) for cc in result['corrcoef']])
     
@@ -408,7 +413,7 @@ def plot_shifts(result, ax=None):
     ax.set_ylabel('Shift (pix)')
     ax.set_ylim(-512, 512)
     ax.legend()
-    plt.show()
+    # plt.show()
     return ax
 
 
@@ -427,5 +432,5 @@ def plot_correlation_coefficients(result, ax=None):
     ax.set_xlabel('Zstack plane index')
     ax.set_ylabel('Correlation coefficient')
     ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-    plt.show()
+    # plt.show()
     return ax
