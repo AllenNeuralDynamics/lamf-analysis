@@ -6,7 +6,8 @@ import skimage
 import scipy
 import cv2
 import matplotlib.pyplot as plt
-import ray
+import multiprocessing as mp
+from functools import partial
 import sys
 import os
 os.environ["RAY_verbose_spill_logs"] = "0"
@@ -29,12 +30,17 @@ import lamf_analysis.ophys.zstack as zstack
 
 def zdrift_for_session_planes(raw_path: Union[Path, str],
                               parallel: bool = True,
+                              n_processes: int = None,
                               **zdrift_kwargs) -> dict:
     """Get z-drift for all the planes in a session
     Parameters
     ----------
     raw_path : Path
         Path to the raw session directory
+    parallel : bool, optional
+        Whether to use parallel processing, by default True
+    n_processes : int, optional
+        Number of processes to use. If None, uses number of CPU cores, by default None
     zdrift_kwargs : dict
         Arguments for calc_zdrift (use_clahe and use_valid_pix)
 
@@ -47,16 +53,19 @@ def zdrift_for_session_planes(raw_path: Union[Path, str],
                                                         data_level="raw")
 
     if parallel:
-        if not ray.is_initialized():
-            utils.initialize_ray()
-            ray_shutdown = True
-        else:
-            ray_shutdown = False
-        futures = []
-        for path_to_plane in raw_path_to_all_planes:
-            futures.append(ray.remote(calc_zdrift).remote(path_to_plane, **zdrift_kwargs))
-        result_dict = ray.get(futures)
+        # Create a partial function with the kwargs
+        calc_zdrift_partial = partial(calc_zdrift, **zdrift_kwargs)
         
+        # Determine number of processes
+        if n_processes is None:
+            n_processes = mp.cpu_count()
+        
+        # Create a pool of workers
+        with mp.Pool(processes=n_processes) as pool:
+            # Map the function to all planes
+            result_dict = pool.map(calc_zdrift_partial, raw_path_to_all_planes)
+            
+        # Sort results by plane_id
         plane_ids = np.sort([result['plane_id'] for result in result_dict])
         zdrift_dict = {}
         for plane_id in plane_ids:
@@ -328,9 +337,6 @@ def plot_session_zdrift(result, ax=None, cc_threshold=0.65,
         fig = ax.get_figure()
     zdrift_um = result['zdrift_um']
     max_cc = np.array([max(cc) for cc in result['corrcoef']])
-
-    # # test
-    # max_cc = np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.65, 0.7, 0.8, 0.9, 0.95])
     
     ax.plot(zdrift_um, color='black', zorder=1)
     
@@ -351,24 +357,38 @@ def plot_session_zdrift(result, ax=None, cc_threshold=0.65,
                         cmap='Reds_r', vmin=0, vmax=cc_threshold)
         ax.set_ylim(ylim)
         ax.set_xlim(xlim)
+
+    # Get the current figure and axes positions
+    fig = ax.figure
+    ax_pos = ax.get_position()
+    
+    # Create a single colorbar axis
+    cbar_width = 0.02
+    cbar_pad = 0.1
+    
+    # Create a single colorbar axis that will be divided
+    cax = fig.add_axes([ax_pos.x1 + cbar_pad,
+                       ax_pos.y0,
+                       cbar_width,
+                       ax_pos.height])
+    
+    # Add colorbars
+    bar1 = plt.colorbar(h1, cax=cax)
+    bar1.set_label('Correlation coefficient')
+    
+    # Position label relative to colorbar
+    label_pos = cax.get_position().x1 + 0.02
+    bar1.ax.yaxis.set_label_coords(label_pos, 0.5)
+    
+    # Create a second colorbar for the lower part
+    bar2 = plt.colorbar(h2, cax=cax)
+    
+    # Adjust the colorbar to show only the upper part for bar1
+    bar1.ax.set_ylim(cc_threshold, 1)
+    bar2.ax.set_ylim(0, cc_threshold)
     
     ax.set_xlabel('Segment')
     ax.set_ylabel('Z-drift (um)')
-
-    if add_colorbar:
-        cax1 = fig.add_axes([ax.get_position().x1 + 0.01,
-                            ax.get_position().y0 + (ax.get_position().height) * cc_threshold,
-                            0.02,
-                            ax.get_position().height * (1 - cc_threshold)])
-        bar1 = plt.colorbar(h1, cax=cax1)
-        bar1.set_label('Correlation coefficient')
-        bar1.ax.yaxis.set_label_coords(6, -0.5)
-
-        cax2 = fig.add_axes([ax.get_position().x1 + 0.01,
-                        ax.get_position().y0,
-                        0.02,
-                        ax.get_position().height * cc_threshold])
-        plt.colorbar(h2, cax=cax2)
     return ax
 
 
