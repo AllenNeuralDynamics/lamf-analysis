@@ -28,7 +28,12 @@ def get_client():
     return client
 
 
-def get_data_asset_search_results(query_str, mouse_id):
+def get_data_asset_search_results(query_str, mouse_id=None):
+    ''' Get data asset search results from CodeOcean
+    example: 
+        query_str = f'conditioned_mean_response_v2' # works for data asset name beginning with this string
+        results = get_data_asset_search_results(query_str, mouse_id)
+    '''
     client = get_client()
     data_asset_params = DataAssetSearchParams(
         offset=0,
@@ -41,7 +46,10 @@ def get_data_asset_search_results(query_str, mouse_id):
         query=query_str
     )
     data_assets = client.data_assets.search_data_assets(data_asset_params)
-    results = [da for da in data_assets.results if f'{mouse_id}' in da.name]
+    if mouse_id is not None:
+        results = [da for da in data_assets.results if f'{mouse_id}' in da.name]
+    else:
+        results = data_assets.results
     return results
 
 
@@ -49,6 +57,14 @@ def get_mouse_session_df(mouse_id,
                          processed_date_after=None,
                          processed_date_before=None,
                          include_pupil=True):
+    ''' Get mouse session dataframe.
+    Using aind_session, it first querys all sessions for a mouse (raw and derived data all matched to the raw session),
+        potentially filters by processed_date_after and processed_date_before,
+        and then filters by include_pupil.
+    Resulting dataframe has the following columns:
+        raw_data_date, processed_data_date, capsule_id, commit_id, processed_data_asset_id, raw_data_asset_id, num_provenence_data_assets, pupil_data_asset_id
+        * capsule_id and commit_id can be used to filter (hopefully using look-up table)
+    '''
     success = True
     mouse_sessions = aind_session.get_sessions(subject_id=mouse_id)
     # to prevent errors (happens when adding faulty tags)
@@ -136,6 +152,10 @@ def get_mouse_session_df(mouse_id,
         
 
 def attach_mouse_data_assets(mouse_session_df, include_pupil=True):
+    ''' Attach mouse data assets to mouse session dataframe.
+    Built to use the results from get_mouse_session_df.
+    Returns if successful.
+    '''
     assert np.all([isinstance(raw_id, str) for raw_id in mouse_session_df.raw_data_asset_id.values]), \
         'raw data asset ids must be str'
     if include_pupil:
@@ -211,6 +231,8 @@ def get_session_info(mouse_id, data_dir='/root/capsule/data'):
 
 def get_bmod(raw_path):
     ''' Get BehaviorMultiplaneOphysDataset object from a raw path
+    ### Currently does not work.
+    Use get_bod_list instead.
     '''
     session_name = str(raw_path).split('/')[-1]
     data_dir = Path(raw_path).parent
@@ -419,6 +441,7 @@ def get_roi_table_from_plane_path(plane_path):
     roi_table = rois.roi_table_from_mask_arrays(pixel_masks)
     roi_table = roi_table.rename(columns={'id': 'cell_roi_id'})
     return roi_table
+
 
 def get_session_json_from_plane_path(plane_path):
     ''' Load session.json for a given plane path

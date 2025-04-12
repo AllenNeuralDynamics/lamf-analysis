@@ -37,10 +37,10 @@ def get_roi_df_with_valid_roi(bod_or_path, small_roi_radius_threshold_in_um=4):
     else:
         # gather relevant metadata
         if isinstance(bod_or_path, BehaviorOphysDataset):
-            plane_path = bod.metadata['plane']['plane_path']
-            fov_height = bod.metadata['plane']['fov_height']
-            fov_width = bod.metadata['plane']['fov_width']
-            fov_scale_factor = bod.metadata['plane']['fov_scale_factor']
+            plane_path = bod_or_path.metadata['plane']['plane_path']
+            fov_height = bod_or_path.metadata['plane']['fov_height']
+            fov_width = bod_or_path.metadata['plane']['fov_width']
+            fov_scale_factor = bod_or_path.metadata['plane']['fov_scale_factor']
         else:
             plane_path = bod_or_path
             session_json = cdu.get_session_json_from_plane_path(plane_path)
