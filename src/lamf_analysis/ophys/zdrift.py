@@ -1,224 +1,195 @@
 from pathlib import Path
-import os
 import h5py
 import numpy as np
-import json
 from typing import Union
 import skimage
 import scipy
-import pandas as pd
 import cv2
-
+import matplotlib.pyplot as plt
+import sys
+import os
+import multiprocessing as mp
+from multiprocessing import Pool
+from functools import partial
 
 import lamf_analysis.utils as utils
 import lamf_analysis.ophys.zstack as zstack
 
 ###############################################################
 # Zdrift 
+#
+# Use phase correlation:
+# Median filtering and rolling averaging the z-stack
+# Crop images based on the motion correction output
+# Take mean FOV image, calculate transformation, apply to episodic mean FOVs, and calculate correlation coefficient
+# (Optional) Use CLAHE for contrast adjustment
+# (Optional) Calculate correlation coefficient only in the valid pixels after transformation
+#       - Penalize too much shift by using valid pixel threshold
+# Session to session matching by using zstack to zstack registration (implemented in a different file) 
 ###############################################################
 
-def zdrift_for_session_planes(session_path: Union[Path, str],
+def zdrift_for_session_planes(raw_path: Union[Path, str],
+                              parallel: bool = True,
+                              n_processes: int = None,
                               **zdrift_kwargs) -> dict:
     """Get z-drift for all the planes in a session
     Parameters
     ----------
-    session_path : Path
-        Path to the session directory
+    raw_path : Path
+        Path to the raw session directory
+    parallel : bool, optional
+        Whether to use parallel processing, by default True
+    n_processes : int, optional
+        Number of processes to use. If None, uses number of CPU cores, by default None
     zdrift_kwargs : dict
-        Arguments for calc_zdrift
+        Arguments for calc_zdrift (use_clahe and use_valid_pix)
 
     Returns
     -------
     dict
         Dictionary of z-drift for each plane
     """
-    planes = utils.plane_paths_from_session(session_path, data_level="processed")
+    raw_path_to_all_planes = utils.plane_paths_from_session(raw_path,
+                                                        data_level="raw")
 
-    zdrift_dict = {}
-    for plane in planes:
-        plane_id = int(plane.name.split('_')[-1])
-        zdrift_dict[plane_id] = calc_zdrift(plane, **zdrift_kwargs)
+    if parallel:
+        # Create a partial function with the kwargs
+        calc_zdrift_partial = partial(calc_zdrift, **zdrift_kwargs)
+        
+        # Determine number of processes
+        if n_processes is None:
+            n_processes = mp.cpu_count()
+        
+        # Create a pool of workers
+        with mp.Pool(processes=n_processes) as pool:
+            # Map the function to all planes
+            result_dict = pool.map(calc_zdrift_partial, raw_path_to_all_planes)
+            
+        # Sort results by plane_id
+        plane_ids = np.sort([result['plane_id'] for result in result_dict])
+        zdrift_dict = {}
+        for plane_id in plane_ids:
+            result = [result for result in result_dict if result['plane_id'] == plane_id][0]
+            zdrift_dict[plane_id] = result
+    else:
+        zdrift_dict = {}
+        for path_to_plane in raw_path_to_all_planes:
+            plane_id = int(path_to_plane.name.split('_')[-1])
+            zdrift_dict[plane_id] = calc_zdrift(path_to_plane, **zdrift_kwargs)
     return zdrift_dict
 
 
-# TODO: not finished refactoring (04/30/24)
-# def calc_zdrift(movie_path: Path, 
-#                 reference_stack_path: Path, 
-#                 segment_minute: int = 10, 
-#                 correct_image_size=(512, 512),
-#                 use_clahe=True, 
-#                 use_valid_pix_pc=True, 
-#                 use_valid_pix_sr=True):
-#     """Calc zdrift for an ophys movie relative to reference stack
+def calc_zdrift(raw_plane_path: Path,
+                use_clahe=True, 
+                use_valid_pix=True, 
+                ):
+    """Calc zdrift for an ophys movie relative to reference stack
 
-#     Register the mean FOV image to the z-stack using 2-step registration.
-#     Then, apply the same transformation to segmented FOVs and
-#     calculated matched planes in each segment.
+    Register the mean FOV image to the z-stack.
+    Then, apply the same transformation to segmented FOVs and
+    calculated matched planes in each segment.
 
-#     Parameters
-#     ----------
-#     movie_path : Path
-#         Path to the movie directory
-#     reference_stack_path : Path
-#         Path to the reference stack
-#     segment_minute : int, optional
-#         Number of minutes to segment the plane video, by default 10
-#     correct_image_size : tuple, optional
-#         Tuple for correct image size, (y,x), by default (512,512)
-#     use_clahe : bool, optional
-#         if to use CLAHE for registration, by default True
-#     use_valid_pix_pc : bool, optional
-#         if to use valid pixels only for correlation coefficient calculation
-#         during the 1st step - phase correlation registration, by default True
-#     use_valid_pix_sr : bool, optional
-#         if to use valid pixels only for correlation coefficient calculation
-#         during the 2nd step - StackReg registration, by default True
+    Movie should be out of decrosstalk directory, if multiscope is used.
+    Otherwise, it should be from motion correction directory.
+    # TODO: Define movie directory based on the rig or operation mode (06/2024)
 
-#     Returns
-#     -------
-#     np.ndarray (1d: int)
-#         matched plane indice from all the segments
-#     np.ndarray (2d: float)
-#         correlation coeffiecient for each segment across the reference z-stack
-#     np.ndarray (3d: float)
-#         Segment FOVs registered to the z-stack
-#     int
-#         Index of the matched plane for the mean FOV
-#     np.ndarray (1d: float)
-#         correlation coefficient for the mean FOV across the reference z-stack
-#     np.ndarray (2d: float)
-#         Mean FOV registered to the reference z-stack
-#     np.ndarray (3d: float)
-#         Reference z-stack cropped using motion output of the experiment
-#     np.ndarray (2d: float)
-#         Transformation matrix for StackReg RIGID_BODY
-#     np.ndarray (1d: int or float)
-#         An array of translation shift
-#     dict
-#         Options for calculating z-drift
-#     """
-#     # valid_threshold = 0.01  # TODO: find the best valid threshold
+    Parameters
+    ----------
+    raw_plane_path : Path
+        Path to the raw plane directory
+    save_dir : Path
+        Path to save the result
+    segment_minute : int, optional
+        Number of minutes to segment the plane video, by default 10
+    correct_image_size : tuple, optional
+        Tuple for correct image size, (y,x), by default (512,512)
+    use_clahe : bool, optional
+        if to use CLAHE for registration, by default True
+    use_valid_pix : bool, optional
+        if to use valid pixels only for correlation coefficient calculation
+        during the 1st step - phase correlation registration, by default True
 
-#     save_dir = Path(save_dir)
+    Returns
+    -------
+    dict
+        Results and options for calculating z-drift
+    """
+    # valid_threshold = 0.01  # TODO: find the best valid threshold
+    # find processed plane path from raw plane path
+    if isinstance(raw_plane_path, str):
+        raw_plane_path = Path(raw_plane_path)
+    plane_id = raw_plane_path.stem
+    session_name = raw_plane_path.parent.parent.stem
+    processed_path = list(raw_plane_path.parent.parent.parent.glob(f'{session_name}_processed_*'))
+    assert len(processed_path) == 1
+    processed_path = processed_path[0]
+    processed_plane_path = processed_path / plane_id
 
-#     # to remove rolling effect from motion correction
-#     range_y, range_x = get_motion_correction_crop_xy_range(
-#         oeid)  
+    # to remove rolling effect from motion correction
+    range_y, range_x = utils.get_motion_correction_crop_xy_range(
+        processed_plane_path)
 
-#     # Get reference z-stack and crop
-#     ref_zstack = register_local_z_stack(reference_stack_path)
-#     ref_zstack_crop = ref_zstack[:, range_y[0]:range_y[1], range_x[0]:range_x[1]]
+    # Get reference z-stack and crop
+    # TODO: it should be processed first in the pipeline, and this part of code 
+    # should just retrieve the processed (decrosstalked & registered) z-stack
 
-#     # Get segmented FOVs and crop
-#     segment_mean_images = get_segment_mean_images(
-#         oeid, save_dir=exp_dir, segment_minute=segment_minute)
-#     segment_mean_images_crop = segment_mean_images[:, range_y[0]:range_y[1], range_x[0]:range_x[1]]
+    # TODO: the following code does not work with data uploaded from rig
+    # z-stack splitting and saving to h5 should be done first
+    try:
+        local_zstack_path = list(raw_plane_path.glob('*_z_stack_local.h5'))[0]
+    except:
+        raise FileNotFoundError('Local z-stack not found')
+    ref_zstack = zstack.register_local_z_stack(local_zstack_path)
+    ref_zstack_crop = ref_zstack[:, range_y[0]:range_y[1], range_x[0]:range_x[1]]
 
-#     # Rung registration for each segmented FOVs
-#     matched_plane_indices = np.zeros(
-#         segment_mean_images_crop.shape[0], dtype=int)
-#     corrcoef = []
-#     segment_reg_imgs = []
-#     rigid_tmat_list = []
-#     translation_shift_list = []
-#     for i in range(segment_mean_images_crop.shape[0]):
-#         mpi, cc, regimg, cc_pre, regimg_pre, rigid_tmat, translation_shift = estimate_plane_from_ref_zstack(
-#             segment_mean_images_crop[i], ref_zstack_crop, use_clahe=use_clahe,
-#             use_valid_pix_pc=use_valid_pix_pc, use_valid_pix_sr=use_valid_pix_sr)
-#         matched_plane_indices[i] = mpi
-#         corrcoef.append(cc)
-#         segment_reg_imgs.append(regimg)
-#         rigid_tmat_list.append(rigid_tmat)
-#         translation_shift_list.append(translation_shift)
-#     corrcoef = np.asarray(corrcoef)
+    si_metadata, roi_groups = zstack.local_zstack_metadata(local_zstack_path)
+    number_of_z_planes= int(si_metadata['SI.hStackManager.actualNumSlices'])
+    # number_of_repeats = int(si_metadata['SI.hStackManager.actualNumVolumes'])
+    z_step = float(si_metadata['SI.hStackManager.actualStackZStepSize'])
 
-#     ops = {'use_clahe': use_clahe,
-#             'use_valid_pix_pc': use_valid_pix_pc,
-#             'use_valid_pix_sr': use_valid_pix_sr}
+    # Get preprocessed z-stack
+    stack_pre = med_filt_z_stack(ref_zstack_crop)
+    stack_pre = rolling_average_stack(stack_pre)
 
-#     if save_data:
-#         # Save the result
-#         if not os.path.isdir(exp_dir):
-#             os.makedirs(exp_dir)
-#         with h5py.File(exp_dir / exp_fn, 'w') as h:
-#             h.create_dataset('matched_plane_indices',
-#                                 data=matched_plane_indices)
-#             h.create_dataset('corrcoef', data=corrcoef)
-#             h.create_dataset('segment_fov_registered',
-#                                 data=segment_reg_imgs)
-#             h.create_dataset('corrcoef_pre', data=cc_pre)
-#             h.create_dataset('segment_fov_registered_pre',
-#                                 data=regimg_pre)
-#             h.create_dataset('ref_oeid', data=ref_oeid)
-#             h.create_dataset('ref_zstack_crop', data=ref_zstack_crop)
-#             h.create_dataset('rigid_tmat', data=rigid_tmat_list)
-#             h.create_dataset('translation_shift',
-#                                 data=translation_shift_list)
-#             h.create_dataset('ops/use_clahe', shape=(1,), data=use_clahe)
-#             h.create_dataset('ops/use_valid_pix_pc',
-#                                 shape=(1,), data=use_valid_pix_pc)
-#             h.create_dataset('ops/use_valid_pix_sr',
-#                                 shape=(1,), data=use_valid_pix_sr)
+    # Get episodic mean FOVs (emf) and crop
+    # TODO: make the mean FOV movie with finer time resolution
+    decrosstalk_dir = processed_plane_path / 'decrosstalk'
+    emf_h5_fn = list(Path(decrosstalk_dir).glob('*_decrosstalk_episodic_mean_fov.h5'))[0]
+    with h5py.File(emf_h5_fn, 'r') as h:
+        episodic_mean_fovs = h['data'][:]
+    episodic_mean_fovs_crop = episodic_mean_fovs[:, range_y[0]:range_y[1], range_x[0]:range_x[1]]
 
-#     return matched_plane_indices, corrcoef, segment_reg_imgs, \
-#         ref_oeid, ref_zstack_crop, rigid_tmat_list, translation_shift_list, ops
+    # Run registration for each episodic mean FOVs
+    matched_plane_indices = np.zeros(
+        episodic_mean_fovs_crop.shape[0], dtype=int)
+    corrcoef = []
+    segment_reg_imgs = []
+    shift_list = []
+    for i in range(episodic_mean_fovs_crop.shape[0]):
+        fov_reg_stack, cc, shift = fov_stack_register_phase_correlation(
+            episodic_mean_fovs_crop[i], stack_pre, use_clahe=use_clahe,
+            use_valid_pix=use_valid_pix)
+        matched_plane_indices[i] = np.argmax(cc)
+        corrcoef.append(cc)
+        segment_reg_imgs.append(fov_reg_stack[np.argmax(cc)])
+        shift_list.append(shift)
+    corrcoef = np.asarray(corrcoef)
 
+    center_z = number_of_z_planes // 2
+    zdrift_um = z_step * (matched_plane_indices - center_z)
 
-####################################################################################################
-# FOV + Zstack registration
-####################################################################################################
+    results = {'plane_id': plane_id,
+                'zdrift_um': zdrift_um,
+                'matched_plane_indices': matched_plane_indices,
+                'corrcoef': corrcoef,
+                'segment_fov_registered': segment_reg_imgs,
+                'ref_zstack_crop': ref_zstack_crop,                   
+                'shift': shift_list,
+                'use_clahe': use_clahe,
+                'use_valid_pix': use_valid_pix}
 
-# TODO: finish Refactor (04/2024)
-# def get_segment_mean_images(ophys_experiment_id, save_dir=None, save_images=True, segment_minute=10):
-#     """Get segmented mean images of an experiment
-#     And save the result, in case the directory was specified.
+    return results
 
-#     Parameters
-#     ----------
-#     ophys_experiment_id : int
-#         ophys experiment ID
-#     save_dir : Path, optional
-#         ophys experiment directory to load/save.
-#         If None, then do not attemp loading previously saved data (it takes 2-3 min)
-#     segment_minute : int, optional
-#         length of a segment, in min, by default 10
-
-#     Returns
-#     -------
-#     np.ndarray (3d)
-#         mean FOVs from each segment of the video
-#     """
-
-#     if save_dir is None:
-#         save_dir = global_base_dir
-#     got_flag = 0
-#     segment_fov_fp = save_dir / f'{ophys_experiment_id}_segment_fov.h5'
-#     if os.path.isfile(segment_fov_fp):
-#         with h5py.File(segment_fov_fp, 'r') as h:
-#             mean_images = h['data'][:]
-#             got_flag = 1
-
-#     if got_flag == 0:
-#         frame_rate, timestamps = get_correct_frame_rate(ophys_experiment_id)
-#         movie_fp = from_lims.get_motion_corrected_movie_filepath(
-#             ophys_experiment_id)
-#         h = h5py.File(movie_fp, 'r')
-#         movie_len = h['data'].shape[0]
-#         segment_len = int(np.round(segment_minute * frame_rate * 60))
-
-#         # get frame start and end (for range) indices
-#         frame_start_end = get_frame_start_end(movie_len, segment_len)
-
-#         mean_images = np.zeros((len(frame_start_end), *h['data'].shape[1:]))
-#         for i in range(len(frame_start_end)):
-#             mean_images[i, :, :] = np.mean(
-#                 h['data'][frame_start_end[i][0]:frame_start_end[i][1], :, :], axis=0)
-#         if save_images:
-#             if not os.path.isdir(save_dir):
-#                 os.makedirs(save_dir)
-#             with h5py.File(segment_fov_fp, 'w') as h:
-#                 h.create_dataset('data', data=mean_images)
-#     return mean_images
 
 def fov_stack_register_phase_correlation(fov, stack, use_clahe=True, use_valid_pix=True):
     """ Reigster FOV to each plane in the stack
@@ -242,162 +213,222 @@ def fov_stack_register_phase_correlation(fov, stack, use_clahe=True, use_valid_p
     np.array (1d)
         correlation coefficient between the registered fov and the stack in each plane
     list
-        list of translation shifts
+        list of translation shifts (y,x)
     """
     assert len(fov.shape) == 2
     assert len(stack.shape) == 3
     assert fov.shape == stack.shape[1:]
 
-    stack_pre = med_filt_z_stack(stack)
-    stack_pre = rolling_average_stack(stack_pre)
-
     if use_clahe:
         fov_for_reg = image_normalization(skimage.exposure.equalize_adapthist(
-            fov.astype(np.uint16)), dtype='unit16')  # normalization to make it uint16
-        stack_for_reg = np.zeros_like(stack_pre)
+            fov.astype(np.uint16)))  # normalization to make it uint16
+        stack_for_reg = np.zeros_like(stack)
         for pi in range(stack.shape[0]):
             stack_for_reg[pi, :, :] = image_normalization(
-                skimage.exposure.equalize_adapthist(stack_pre[pi, :, :].astype(np.uint16)),dtype='uint16')
+                skimage.exposure.equalize_adapthist(stack[pi, :, :].astype(np.uint16)))
     else:
         fov_for_reg = fov.copy()
-        stack_for_reg = stack_pre.copy()
+        stack_for_reg = stack.copy()
 
-    fov_reg_stack = np.zeros_like(stack)
-    corrcoef = np.zeros(stack.shape[0])
+    fov_reg_stack = np.zeros_like(stack_for_reg)
+    corrcoef_arr = np.zeros(stack_for_reg.shape[0])
     shift_list = []
-    for pi in range(stack.shape[0]):
+    for pi in range(stack_for_reg.shape[0]):
         shift, _, _ = skimage.registration.phase_cross_correlation(
             stack_for_reg[pi, :, :], fov_for_reg, normalization=None)
         fov_reg = scipy.ndimage.shift(fov, shift)
         fov_reg_stack[pi, :, :] = fov_reg
         if use_valid_pix:
             valid_y, valid_x = np.where(fov_reg > 0)
-            corrcoef[pi] = np.corrcoef(stack_pre[pi, valid_y, valid_x].flatten(
+            corrcoef_arr[pi] = np.corrcoef(stack[pi, valid_y, valid_x].flatten(
             ), fov_reg[valid_y, valid_x].flatten())[0, 1]
         else:
-            corrcoef[pi] = np.corrcoef(
-                stack_pre[pi, :, :].flatten(), fov_reg.flatten())[0, 1]
-        shift_list.append(shift)
-    return fov_reg_stack, corrcoef, shift_list
+            corrcoef_arr[pi] = np.corrcoef(
+                stack[pi, :, :].flatten(), fov_reg.flatten())[0, 1]
+        shift_list.append(shift)    
+    return fov_reg_stack, corrcoef_arr, shift_list
 
 
-# TODO: finish refactor
-# def fov_stack_register_rigid(fov, stack, use_valid_pix=True):
-#     """Find the best-matched plane index from the stack using rigid-body registration (StackReg)
-#     First register the FOV to each plane in the stack
-#     First pass: Pick the best-matched plane using pixel-wise correlation
-#     Second pass: Using the transformed FOV to the first pass best-matched plane,
-#         sweep through all planes and refine the best-matched plane using correlation.
-#         This fixes minor mis-match due to registration error.
+def med_filt_z_stack(zstack, kernel_size=5):
+    """Get z-stack with each plane median-filtered
 
-#     Parameters
-#     ----------
-#     fov : np.ndarray (2D)
-#         input FOV
-#     stack : np.ndarray (3D)
-#         stack images
-#     use_valid_pix : bool, optional
-#         If to use valid pixels (non-blank pixels after transfromation)
-#         to calculate correlation coefficient, by default True
+    Parameters
+    ----------
+    zstack : np.ndarray
+        z-stack to apply median filtering
+    kernel_size : int, optional
+        kernel size for median filtering, by default 5
+        It seems only certain odd numbers work, e.g., 3, 5, 11, ...
 
-#     Returns
-#     -------
-#     np.ndarray (1D)
-#         matched plane index
-
-#     """
-#     assert len(fov.shape) == 2
-#     assert len(stack.shape) == 3
-#     assert fov.shape == stack.shape[1:]
-
-#     # TODO: figure out what is the best threshold. This value should be larger than one because of the results after registration
-#     valid_pix_threshold = 10  # for uint16 data
-
-#     stack_pre = med_filt_z_stack(stack)
-#     stack_pre = rolling_average_stack(stack_pre)
-
-#     sr = StackReg(StackReg.RIGID_BODY)
-
-#     # apply CLAHE and normalize to make it uint16 (for StackReg)
-#     fov_clahe = image_normalization(skimage.exposure.equalize_adapthist(
-#         fov.astype(np.uint16)),dtype='uint16')  # normalization to make it uint16
-#     stack_clahe = np.zeros_like(stack_pre)
-#     for pi in range(stack_pre.shape[0]):
-#         stack_clahe[pi, :, :] = image_normalization(
-#             skimage.exposure.equalize_adapthist(stack_pre[pi, :, :].astype(np.uint16)),dtype='uint16')
-
-#     # Initialize
-#     corrcoef = np.zeros(stack_clahe.shape[0])
-#     fov_reg_stack = np.zeros_like(stack)
-#     tmat_list = []
-#     for pi in range(len(corrcoef)):
-#         tmat = sr.register(stack_clahe[pi, :, :], fov_clahe)
-#         # Apply the transformation matrix to the FOV registered using phase correlation
-#         fov_reg = sr.transform(fov, tmat=tmat)
-#         if use_valid_pix:
-#             valid_y, valid_x = np.where(fov_reg > valid_pix_threshold)
-#             corrcoef[pi] = np.corrcoef(
-#                 stack_pre[pi, valid_y, valid_x].flatten(), fov_reg[valid_y, valid_x].flatten())[0, 1]
-#         else:
-#             corrcoef[pi] = np.corrcoef(
-#                 stack_pre[pi, :, :].flatten(), fov_reg.flatten())[0, 1]
-#         fov_reg_stack[pi, :, :] = fov_reg
-#         tmat_list.append(tmat)
-#     matched_plane_index = np.argmax(corrcoef)
-#     tmat = tmat_list[matched_plane_index]
-
-#     return matched_plane_index, corrcoef, tmat
+    Returns
+    -------
+    np.ndarray
+        median-filtered z-stack
+    """
+    filtered_z_stack = []
+    for image in zstack:
+        filtered_z_stack.append(cv2.medianBlur(
+            image.astype(np.uint16), kernel_size))
+    return np.array(filtered_z_stack)
 
 
-# TODO: finish refactor
-# def get_segment_mean_images(ophys_experiment_id, save_dir=None, save_images=True, segment_minute=10):
-#     """Get segmented mean images of an experiment
-#     And save the result, in case the directory was specified.
+def rolling_average_stack(stack, rolling_window_flank=2):
+    """ Get a stack with each plane rolling-averaged
+    
+    Parameters
+    ----------
+    stack : np.ndarray
+        stack to apply rolling average
+    rolling_window_flank : int, optional
+        flank size for rolling average, by default 2
+        
+    Returns
+    -------
+    np.ndarray
+        rolling-averaged stack
+    """
+    new_stack = np.zeros(stack.shape)
+    for i in range(stack.shape[0]):
+        new_stack[i] = np.mean(stack[max(0, i-rolling_window_flank) : min(stack.shape[0], i+rolling_window_flank), :, :],
+                                axis=0)
+    return new_stack
 
-#     Parameters
-#     ----------
-#     ophys_experiment_id : int
-#         ophys experiment ID
-#     save_dir : Path, optional
-#         ophys experiment directory to load/save.
-#         If None, then do not attemp loading previously saved data (it takes 2-3 min)
-#     segment_minute : int, optional
-#         length of a segment, in min, by default 10
 
-#     Returns
-#     -------
-#     np.ndarray (3d)
-#         mean FOVs from each segment of the video
-#     """
+def image_normalization(image, im_thresh=0, dtype=np.uint16):
+    """Normalize 2D image and convert to specified dtype
+    Prevent saturation.
 
-#     if save_dir is None:
-#         save_dir = global_base_dir
-#     got_flag = 0
-#     segment_fov_fp = save_dir / f'{ophys_experiment_id}_segment_fov.h5'
-#     if os.path.isfile(segment_fov_fp):
-#         with h5py.File(segment_fov_fp, 'r') as h:
-#             mean_images = h['data'][:]
-#             got_flag = 1
+    Args:
+        image (np.ndarray): input image (2D)
+                            Just works with 3D data as well.
+        im_thresh (float, optional): threshold when calculating pixel intensity percentile.
+                            0 by default
+        dtype (np.dtype, optional): output data type. np.uint16 by default
+    Return:
+        norm_image (np.ndarray)
+    """
+    clip_image = np.clip(image, np.percentile(
+        image[image > im_thresh], 0.2), np.percentile(image[image > im_thresh], 99.8))
+    norm_image = (clip_image - np.amin(clip_image)) / \
+        (np.amax(clip_image) - np.amin(clip_image)) * 0.9
+    image_dtype = ((norm_image + 0.05) *
+                    np.iinfo(np.uint16).max * 0.9).astype(dtype)
+    return image_dtype
 
-#     if got_flag == 0:
-#         frame_rate, timestamps = get_correct_frame_rate(ophys_experiment_id)
-#         movie_fp = from_lims.get_motion_corrected_movie_filepath(
-#             ophys_experiment_id)
-#         h = h5py.File(movie_fp, 'r')
-#         movie_len = h['data'].shape[0]
-#         segment_len = int(np.round(segment_minute * frame_rate * 60))
 
-#         # get frame start and end (for range) indices
-#         frame_start_end = get_frame_start_end(movie_len, segment_len)
 
-#         mean_images = np.zeros((len(frame_start_end), *h['data'].shape[1:]))
-#         for i in range(len(frame_start_end)):
-#             mean_images[i, :, :] = np.mean(
-#                 h['data'][frame_start_end[i][0]:frame_start_end[i][1], :, :], axis=0)
-#         if save_images:
-#             if not os.path.isdir(save_dir):
-#                 os.makedirs(save_dir)
-#             with h5py.File(segment_fov_fp, 'w') as h:
-#                 h.create_dataset('data', data=mean_images)
-#     return mean_images
+###############################################################
+## QC plots for z-drift
+def plot_session_zdrift(result, ax=None, cc_threshold=0.65,
+                        add_colorbar=True):
+    """Plot z-drift for all the segments in a session
+    Drift with peak correlation coefficient overlaid
 
+    Parameters
+    ----------
+    result : dict
+        Dictionary of z-drift results for each plane
+    """
+    if ax is None:
+        fig, ax = plt.subplots(1, 1, figsize=(4, 3))
+    else:
+        fig = ax.get_figure()
+    zdrift_um = result['zdrift_um']
+    max_cc = np.array([max(cc) for cc in result['corrcoef']])
+    
+    ax.plot(zdrift_um, color='black', zorder=1)
+    
+    # split color by correlation coefficient
+    h1 = ax.scatter(np.arange(len(max_cc)), zdrift_um, c=max_cc, s=50,
+                cmap='binary', vmin=cc_threshold, vmax=1,
+                edgecolors='black', linewidth=0.5, zorder=2)
+    under_threshold_ind = np.where(max_cc < cc_threshold)[0]
+    if len(under_threshold_ind) > 0:
+        has_low_cc = 1
+        h2 = ax.scatter(under_threshold_ind, zdrift_um[under_threshold_ind], s=50,
+                        c=max_cc[under_threshold_ind], cmap='Reds_r', vmin=0, vmax=cc_threshold,
+                        edgecolors='red', linewidth=0.5, zorder=3)
+    else:
+        ylim = ax.get_ybound()
+        xlim = ax.get_xbound()
+        h2 = ax.scatter(xlim[0] - 1, ylim[0] - 1, c=0,
+                        cmap='Reds_r', vmin=0, vmax=cc_threshold)
+        ax.set_ylim(ylim)
+        ax.set_xlim(xlim)
+
+    # Get the current figure and axes positions
+    fig = ax.figure
+    ax_pos = ax.get_position()
+    
+    # Create a single colorbar axis
+    cbar_width = 0.02
+    cbar_pad = 0.1
+    
+    # Create a single colorbar axis that will be divided
+    cax = fig.add_axes([ax_pos.x1 + cbar_pad,
+                       ax_pos.y0,
+                       cbar_width,
+                       ax_pos.height])
+    
+    # Add colorbars
+    bar1 = plt.colorbar(h1, cax=cax)
+    bar1.set_label('Correlation coefficient')
+    
+    # Position label relative to colorbar
+    label_pos = cax.get_position().x1 + 0.02
+    bar1.ax.yaxis.set_label_coords(label_pos, 0.5)
+    
+    # Create a second colorbar for the lower part
+    bar2 = plt.colorbar(h2, cax=cax)
+    
+    # Adjust the colorbar to show only the upper part for bar1
+    bar1.ax.set_ylim(cc_threshold, 1)
+    bar2.ax.set_ylim(0, cc_threshold)
+    
+    ax.set_xlabel('Segment')
+    ax.set_ylabel('Z-drift (um)')
+    return ax
+
+
+def plot_shifts(result, ax=None):
+    """Plot shifts at the matched depth for all the segments in a session
+    Both in x-y
+
+    Parameters
+    ----------
+    result : dict
+        Dictionary of z-drift results for each plane
+    """
+    if ax is None:
+        fig, ax = plt.subplots(1, 1, figsize=(4, 3))
+    max_cc_inds = np.array([np.argmax(cc) for cc in result['corrcoef']])        
+    shifts = [result['shift'][i][max_cc_inds[i]] for i in range(len(max_cc_inds))]
+    y_shift = [shift[0] for shift in shifts]
+    x_shift = [shift[1] for shift in shifts]
+    ax.plot(y_shift, color='c', label='y-shift')
+    ax.plot(x_shift, color='m', label='x-shift')
+    ax.set_xlabel('Segment')
+    ax.set_ylabel('Shift (pix)')
+    ax.set_ylim(-512, 512)
+    ax.legend()
+    # plt.show()
+    return ax
+
+
+def plot_correlation_coefficients(result, ax=None):
+    """Plot correlation coefficients for all the segments in a session
+
+    Parameters
+    ----------
+    result : dict
+        Dictionary of z-drift results for each plane
+    """
+    if ax is None:
+        fig, ax = plt.subplots(1, 1, figsize=(4, 3))
+    for i, cc in enumerate(result['corrcoef']):
+        ax.plot(cc, label=f'Seg #{i}')
+    ax.set_xlabel('Zstack plane index')
+    ax.set_ylabel('Correlation coefficient')
+    ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    # plt.show()
+    return ax

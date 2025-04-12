@@ -672,10 +672,10 @@ def stim_response_all(dataset, full_time_window=False):
 
             if event_type in ['images', 'changes']:
                 response_window_duration = 0.5
-                time_window =  [-3, 3] if full_time_window else [-0.5, 0.75]
+                time_window =  [-3, 3] if full_time_window else [-1.0, 1.5]# [-0.5, 0.75]
             elif event_type == 'omissions':
                 response_window_duration = 0.75
-                time_window = [-3, 3]
+                time_window = [-3, 3] if full_time_window else [-1.0, 1.5]
 
             print(f"Processing event_type={event_type}, data_type={data_type}")
             results_dict[(event_type, data_type)] = get_stimulus_response_df(dataset,
@@ -754,21 +754,38 @@ def plot_mean_stim_response_heatmap(msr_df,
 
     sns.set_style("white")
 
+
     if ax is None:
         fig, ax = plt.subplots(1,figsize=(10, 20))
 
     mean_traces = np.vstack(msr_df[trace_type].values)
-    timestamps = np.round(msr_df['trace_timestamps'].values[0],2)
+    timestamps = msr_df['trace_timestamps'].values[0]
 
     vmax = np.percentile(mean_traces, 99.7)
     vmin = np.percentile(mean_traces, 5.0)
 
-    ax.imshow(mean_traces, aspect='auto',vmax=vmax, vmin=vmin)
+    # interpolation off/ smoothing off
+    ax.imshow(mean_traces, vmax=vmax, vmin=vmin, 
+             cmap='viridis', interpolation='none')
     ax.set_xlabel('Time (s)')
     ax.set_ylabel('Cell index')
 
+    # set x labeks to timestamps
+    ax.set_xticks(np.arange(0, len(timestamps), 600))
+    ax.set_xticklabels(np.round(timestamps[::600], 2))
+    # rotate x labels
+    plt.xticks(rotation=90)
+
+    # add white line at stimulus onset (t=0)
+    # get frame closet to 0 in timestamps
+    zero_frame = np.argmin(np.abs(timestamps))
+    ax.axvline(zero_frame, color='w', linestyle='--', alpha=0.5)
+
     
-    cbar = plt.colorbar(ax.imshow(mean_traces, aspect='auto', vmax=vmax, vmin=vmin), ax=ax, fraction=0.02, pad=0.01)
+    
+
+    
+    cbar = plt.colorbar(ax.imshow(mean_traces, aspect='auto', interpolation='none', vmax=vmax, vmin=vmin), ax=ax, fraction=0.02, pad=0.01)
     cbar.set_label('Events')
 
     return ax
@@ -829,6 +846,24 @@ def plot_mean_stim_response_top_ten(msr_df, data_type, event_type, response_trac
     plt.ylabel(f'Mean response {data_type}')
     plt.xlabel('2P frames')
     plt.title(f'Top 10 cells by mean response to {event_type}')
+
+
+####
+# dataset
+####
+def msr_df_for_dataset(dataset, event_type = "changes", data_type = "events" ):
+    
+    
+    sr_df = get_stimulus_response_df(dataset,data_type,event_type,time_window = [-1.0,1.5])
+
+    msr_df = mean_stim_response_df(sr_df,
+                                    conditions=['cell_specimen_id'],
+                                    get_pref_stim=False,
+                                    exclude_omitted_from_pref_stim=True)
+
+    msr_df.sort_values(by='mean_response', ascending=False,inplace=True)
+
+    return msr_df.reset_index(drop=True)
 
 #############################
 # Figures

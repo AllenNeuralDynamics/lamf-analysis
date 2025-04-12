@@ -30,7 +30,7 @@ class CodeOceanDataExplorer(object):
         if self.verbose:
             print("CodeOceanDataExplorer initialized\n---------------------------------")
             print(f"Query: {query}")
-            print(f"Number of assets: {len(self.assets)}")
+            print(f"Number of assets: {len(self.assets)} \n")
         
 
     def _get_client(self):
