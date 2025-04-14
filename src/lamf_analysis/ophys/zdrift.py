@@ -6,11 +6,11 @@ import skimage
 import scipy
 import cv2
 import matplotlib.pyplot as plt
-import multiprocessing as mp
-from functools import partial
 import sys
 import os
-os.environ["RAY_verbose_spill_logs"] = "0"
+import multiprocessing as mp
+from multiprocessing import Pool
+from functools import partial
 
 import lamf_analysis.utils as utils
 import lamf_analysis.ophys.zstack as zstack
@@ -71,8 +71,6 @@ def zdrift_for_session_planes(raw_path: Union[Path, str],
         for plane_id in plane_ids:
             result = [result for result in result_dict if result['plane_id'] == plane_id][0]
             zdrift_dict[plane_id] = result
-        if ray_shutdown:
-            ray.shutdown()
     else:
         zdrift_dict = {}
         for path_to_plane in raw_path_to_all_planes:

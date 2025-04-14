@@ -142,3 +142,4 @@ dmypy.json
 lims_tables/
 ophys-mfish-dev/notebooks/comb-development-nb.ipynb
 src/ophys_mfish_dev/code_ocean_scripts/env.md
+pyrightconfig.json
