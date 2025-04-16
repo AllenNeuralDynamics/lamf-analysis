@@ -384,6 +384,10 @@ def load_plane_data(session_name, opid=None, opid_ind=None, data_dir='/root/caps
     return bod
 
 
+########################################
+## Bypass COMB and get data directly
+#########################################
+
 def load_decrosstalked_mean_image(session_key, plane_id,
                                     data_dir = Path('/root/capsule/data')):
     ''' Load decrosstalked mean image for a given session and plane ID
@@ -400,6 +404,8 @@ def load_decrosstalked_mean_image(session_key, plane_id,
         raise ValueError(f'No processed data found for {session_key}_{plane_id}')
     extraction_path = plane_path / 'extraction'
     h5_fn = extraction_path / f'{plane_id}_extraction.h5'
+    if not os.path.isfile(h5_fn):
+        h5_fn = extraction_path / 'extraction.h5'
     with h5py.File(h5_fn, 'r') as h:
         mean_img = h['meanImg'][:]
     return mean_img
@@ -456,3 +462,33 @@ def get_session_json_from_plane_path(plane_path):
     with open(session_json_fn) as f:
         session_json = json.load(f)
     return session_json
+
+
+def get_frame_rate_from_plane_path(plane_path):
+    ''' Load frame rate for a given plane path
+    '''
+    if isinstance(plane_path, str):
+        plane_path = Path(plane_path)
+    if not os.path.isdir(plane_path):
+        raise ValueError(f'Path not found ({plane_path})')
+    session_json = get_session_json_from_plane_path(plane_path)
+    frame_rate = float(session_json['data_streams'][0]['ophys_fovs'][0]['frame_rate'])
+    return frame_rate
+
+
+def get_decrosstalked_movie_file(plane_path):
+    ''' Load decrosstalked movie for a given plane path
+    It can be retrieved from extraction folder.
+    Faster than loading COMB object.
+    '''
+    if isinstance(plane_path, str):
+        plane_path = Path(plane_path)
+    if not os.path.isdir(plane_path):
+        raise ValueError(f'Path not found ({plane_path})')
+    plane_id = plane_path.name
+    decrosstalk_path = plane_path / 'decrosstalk'
+    decrosstalked_movie_fn = decrosstalk_path / f'{plane_id}_decrosstalk.h5'
+    if not os.path.isfile(decrosstalked_movie_fn):
+        raise ValueError(f'No decrosstalked movie found for {plane_id}')    
+    return decrosstalked_movie_fn
+
