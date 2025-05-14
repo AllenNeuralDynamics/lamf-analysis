@@ -459,14 +459,26 @@ def register_local_zstack_from_raw_tif(zstack_path: Union[Path, str]):
     total_num_frames = cz_reader.shape()[0]
     assert total_num_frames == num_slices * num_volumes * num_channels
 
-    data = cz_reader.data()
+    try: 
+        data = cz_reader.data() # sometimes it fails to read the data (maybe after an update in scanimage?)
+    except:
+        try: 
+            data = imread(zstack_path) # from recent data (12/16/2024) result shape lengths is 4 for multi-channel, instead of 3
+        except:
+            raise ValueError("Failed to read data from tiff file")
     if num_channels == 1:
         zstack_reg = _register_stack(data, total_num_frames, num_slices)
     elif num_channels > 0:
         zstack_reg = []
         total_num_frames_each_channel = total_num_frames // num_channels
         for ch_ind in range(len(channels_saved)):
-            zstack_reg.append(_register_stack(data[ch_ind::num_channels], 
+            if len(data.shape) == 4:
+                ch_split_data = data[:, ch_ind, :, :]
+            elif len(data.shape) == 3:
+                ch_split_data = data[ch_ind::num_channels, :, :]
+            else:
+                raise ValueError("Data shape not recognized")
+            zstack_reg.append(_register_stack(ch_split_data, 
                               total_num_frames_each_channel, num_slices))
     else:
         raise ValueError("num_channels should be 1 or more")

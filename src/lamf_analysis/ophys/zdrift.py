@@ -142,15 +142,6 @@ def calc_zdrift(raw_plane_path: Path,
     ref_zstack = zstack.register_local_z_stack(local_zstack_path)
     ref_zstack_crop = ref_zstack[:, range_y[0]:range_y[1], range_x[0]:range_x[1]]
 
-    si_metadata, roi_groups = zstack.local_zstack_metadata(local_zstack_path)
-    number_of_z_planes= int(si_metadata['SI.hStackManager.actualNumSlices'])
-    # number_of_repeats = int(si_metadata['SI.hStackManager.actualNumVolumes'])
-    z_step = float(si_metadata['SI.hStackManager.actualStackZStepSize'])
-
-    # Get preprocessed z-stack
-    stack_pre = med_filt_z_stack(ref_zstack_crop)
-    stack_pre = rolling_average_stack(stack_pre)
-
     # Get episodic mean FOVs (emf) and crop
     # TODO: make the mean FOV movie with finer time resolution
     decrosstalk_dir = processed_plane_path / 'decrosstalk'
@@ -158,6 +149,29 @@ def calc_zdrift(raw_plane_path: Path,
     with h5py.File(emf_h5_fn, 'r') as h:
         episodic_mean_fovs = h['data'][:]
     episodic_mean_fovs_crop = episodic_mean_fovs[:, range_y[0]:range_y[1], range_x[0]:range_x[1]]
+
+    # get metadata of the z-stack
+    si_metadata, roi_groups = zstack.local_zstack_metadata(local_zstack_path)
+    number_of_z_planes= int(si_metadata['SI.hStackManager.actualNumSlices'])
+    # number_of_repeats = int(si_metadata['SI.hStackManager.actualNumVolumes'])
+    z_step = float(si_metadata['SI.hStackManager.actualStackZStepSize'])
+
+    results = _calc_zdrift_from_images(ref_zstack_crop, episodic_mean_fovs_crop,
+                                        plane_id, number_of_z_planes, z_step,
+                                        use_clahe=use_clahe, use_valid_pix=use_valid_pix)
+    return results    
+
+    
+def _calc_zdrift_from_images(ref_zstack_crop, episodic_mean_fovs_crop,
+                             plane_id, number_of_z_planes, z_step,
+                             use_clahe=True, use_valid_pix=True):
+    """ Calculating z-drift from images and metadata
+    Temporary exposure to work with custom data structure
+    """
+
+    # Get preprocessed z-stack
+    stack_pre = med_filt_z_stack(ref_zstack_crop)
+    stack_pre = rolling_average_stack(stack_pre)
 
     # Run registration for each episodic mean FOVs
     matched_plane_indices = np.zeros(
@@ -187,7 +201,6 @@ def calc_zdrift(raw_plane_path: Path,
                 'shift': shift_list,
                 'use_clahe': use_clahe,
                 'use_valid_pix': use_valid_pix}
-
     return results
 
 
@@ -356,34 +369,23 @@ def plot_session_zdrift(result, ax=None, cc_threshold=0.65,
         ax.set_ylim(ylim)
         ax.set_xlim(xlim)
 
-    # Get the current figure and axes positions
-    fig = ax.figure
-    ax_pos = ax.get_position()
-    
-    # Create a single colorbar axis
-    cbar_width = 0.02
-    cbar_pad = 0.1
-    
-    # Create a single colorbar axis that will be divided
-    cax = fig.add_axes([ax_pos.x1 + cbar_pad,
-                       ax_pos.y0,
-                       cbar_width,
-                       ax_pos.height])
-    
-    # Add colorbars
-    bar1 = plt.colorbar(h1, cax=cax)
+    # Add dual colorbar   
+    cax1 = fig.add_axes([ax.get_position().x1 + 0.01,
+                         ax.get_position().y0 + (ax.get_position().height) * cc_threshold,
+                         0.02,
+                         ax.get_position().height * (1 - cc_threshold)])
+    bar1 = plt.colorbar(h1, cax=cax1)
     bar1.set_label('Correlation coefficient')
     
     # Position label relative to colorbar
-    label_pos = cax.get_position().x1 + 0.02
-    bar1.ax.yaxis.set_label_coords(label_pos, 0.5)
+    bar1.ax.yaxis.set_label_coords(6, -0.5)
     
     # Create a second colorbar for the lower part
-    bar2 = plt.colorbar(h2, cax=cax)
-    
-    # Adjust the colorbar to show only the upper part for bar1
-    bar1.ax.set_ylim(cc_threshold, 1)
-    bar2.ax.set_ylim(0, cc_threshold)
+    cax2 = fig.add_axes([ax.get_position().x1 + 0.01,
+                     ax.get_position().y0,
+                     0.02,
+                     ax.get_position().height * cc_threshold])
+    plt.colorbar(h2, cax=cax2)
     
     ax.set_xlabel('Segment')
     ax.set_ylabel('Z-drift (um)')
