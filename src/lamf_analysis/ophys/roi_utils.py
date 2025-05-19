@@ -213,8 +213,10 @@ def collate_masks(mask_3d1, mask_3d2, iou_threshold=0.3):
 
 def get_iou_ioa_mat(mask_3d1, mask_3d2):
     assert len(mask_3d1.shape) == len(mask_3d2.shape) == 3
-    assert mask_3d1.max() == mask_3d1.shape[0]
-    assert mask_3d2.max() == mask_3d2.shape[0]
+    # assert mask_3d1.max() == mask_3d1.shape[0]
+    # assert mask_3d2.max() == mask_3d2.shape[0]
+    assert np.array_equal(np.unique(mask_3d1), np.unique(mask_3d2))
+    assert np.array_equal(np.unique(mask_3d1), np.array([0,1]))
 
     iou_mat = np.zeros((mask_3d1.shape[0], mask_3d2.shape[0])) # intersection / union
     ioa_mat1 = np.zeros((mask_3d1.shape[0], mask_3d2.shape[0])) # intersection / area of mask1 ROI
@@ -226,8 +228,8 @@ def get_iou_ioa_mat(mask_3d1, mask_3d2):
             if intersection_map.any():
                 union_map = mask_3d1[i] + mask_3d2[j] > 0
                 iou_mat[i,j] = np.sum(intersection_map) / np.sum(union_map)
-                ioa_mat1[i,j] = np.sum(intersection_map) / np.sum(mask_3d1)
-                ioa_mat2[i,j] = np.sum(intersection_map) / np.sum(mask_3d2)
+                ioa_mat1[i,j] = np.sum(intersection_map) / np.sum(mask_3d1[i])
+                ioa_mat2[i,j] = np.sum(intersection_map) / np.sum(mask_3d2[j])
     #TODO: needs validation in edge cases?
     return iou_mat, ioa_mat1, ioa_mat2
 

@@ -16,6 +16,7 @@ from aind_ophys_data_access import rois
 from comb import file_handling
 
 from lamf_analysis.code_ocean import capsule_bod_utils as cbu
+import lamf_analysis.utils as lamf_utils
 
 DEFAULT_MOUNT_TO_IGNORE = ['fb4b5cef-4505-4145-b8bd-e41d6863d7a9', # Ophys_Extension_schema_10_14_2024_13_44
                             '35d1284e-4dfa-4ac3-9ba8-5ea1ae2fdaeb'], # ROI classifier V1
@@ -430,7 +431,7 @@ def get_roi_table_from_h5(session_key, plane_id,
     return roi_table
 
 
-def get_roi_table_from_plane_path(plane_path):
+def get_roi_table_from_plane_path(plane_path, apply_filter=True, small_roi_radius_threshold_in_um=4):
     ''' Load ROI table for a given plane path
     It can be retrieved from extraction folder.
     Faster than loading COMB object.
@@ -446,6 +447,34 @@ def get_roi_table_from_plane_path(plane_path):
             
     roi_table = rois.roi_table_from_mask_arrays(pixel_masks)
     roi_table = roi_table.rename(columns={'id': 'cell_roi_id'})
+
+    if apply_filter:
+        range_y, range_x = lamf_utils.get_motion_correction_crop_xy_range(plane_path)
+
+        session_json = get_session_json_from_plane_path(plane_path)
+        fov_info = session_json['data_streams'][0]['ophys_fovs'][0] # assume this data is the same for all fovs
+        fov_height = fov_info['fov_height']
+        fov_width = fov_info['fov_width']
+        fov_scale_factor = float(fov_info['fov_scale_factor'])
+        
+        on_mask = np.zeros((fov_height, fov_width), dtype=bool)
+        on_mask[range_y[0]:range_y[1], range_x[0]:range_x[1]] = True
+        motion_mask = ~on_mask
+
+        def _touching_motion_border(row, motion_mask):
+            if (row.mask_matrix * motion_mask).any():
+                return True
+            else:
+                return False
+
+        roi_table['touching_motion_border'] = roi_table.apply(_touching_motion_border, axis=1, motion_mask=motion_mask)
+        
+        small_roi_radius_threshold_in_pix = small_roi_radius_threshold_in_um / float(fov_scale_factor)
+        area_threshold = np.pi * (small_roi_radius_threshold_in_pix**2)
+        
+        roi_table['small_roi'] = roi_table['mask_matrix'].apply(lambda x: len(np.where(x)[0]) < area_threshold)
+        roi_table['valid_roi'] = ~roi_table['touching_motion_border'] & ~roi_table['small_roi']
+
     return roi_table
 
 
