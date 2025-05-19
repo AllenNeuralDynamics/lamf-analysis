@@ -493,6 +493,29 @@ def get_session_json_from_plane_path(plane_path):
     return session_json
 
 
+def get_suite2p_ops_from_plane_path(plane_path):
+    ''' Load suite2p ops for a given plane path
+    '''
+    if isinstance(plane_path, str):
+        plane_path = Path(plane_path)
+    if not os.path.isdir(plane_path):
+        raise ValueError(f'Path not found ({plane_path})')
+    motion_correction_json_path = list((plane_path / 'motion_correction').glob('*_motion_correction_data_process.json'))
+    if len(motion_correction_json_path) == 0:
+        motion_correction_json_path = list((plane_path / 'motion_correction').glob('processing.json'))
+        if len(motion_correction_json_path) == 0:
+            raise ValueError(f'No extraction json found for {plane_path}')
+    elif len(motion_correction_json_path) > 1:
+        raise ValueError(f'Multiple extraction json found for {plane_path}')
+    with open(motion_correction_json_path[0]) as f:
+        motion_correction_json = json.load(f)
+    if 'parameters' in motion_correction_json:
+        suite2p_ops = motion_correction_json['parameters']['suite2p_args']
+    elif 'processing_pipeline' in motion_correction_json:
+        suite2p_ops = motion_correction_json['processing_pipeline']['data_processes'][0]['parameters']['suite2p_args']
+    return suite2p_ops
+
+
 def get_frame_rate_from_plane_path(plane_path):
     ''' Load frame rate for a given plane path
     '''
