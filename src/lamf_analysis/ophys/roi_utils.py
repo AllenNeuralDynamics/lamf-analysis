@@ -6,7 +6,7 @@ import matplotlib
 from skimage import measure
 from typing import Union, Tuple
 import cv2
-
+from scipy.sparse import csr_matrix
 
 ###################################################################################################
 # I/O
@@ -211,27 +211,58 @@ def collate_masks(mask_3d1, mask_3d2, iou_threshold=0.3):
     return new_mask, (num_unique_in_mask1, num_unique_in_mask2), (ind_remove_from_mask1, ind_remove_from_mask2)
 
 
-def get_iou_ioa_mat(mask_3d1, mask_3d2):
+# def get_iou_ioa_mat(mask_3d1, mask_3d2):
+#     assert len(mask_3d1.shape) == len(mask_3d2.shape) == 3
+#     # assert mask_3d1.max() == mask_3d1.shape[0]
+#     # assert mask_3d2.max() == mask_3d2.shape[0]
+#     assert np.array_equal(np.unique(mask_3d1), np.unique(mask_3d2))
+#     assert np.array_equal(np.unique(mask_3d1), np.array([0,1]))
+
+#     iou_mat = np.zeros((mask_3d1.shape[0], mask_3d2.shape[0])) # intersection / union
+#     ioa_mat1 = np.zeros((mask_3d1.shape[0], mask_3d2.shape[0])) # intersection / area of mask1 ROI
+#     ioa_mat2 = np.zeros((mask_3d1.shape[0], mask_3d2.shape[0])) # intersection / area of mask2 ROI
+
+#     for i in range(mask_3d1.shape[0]):
+#         for j in range(mask_3d2.shape[0]):
+#             intersection_map = mask_3d1[i] * mask_3d2[j] > 0
+#             if intersection_map.any():
+#                 union_map = mask_3d1[i] + mask_3d2[j] > 0
+#                 iou_mat[i,j] = np.sum(intersection_map) / np.sum(union_map)
+#                 ioa_mat1[i,j] = np.sum(intersection_map) / np.sum(mask_3d1[i])
+#                 ioa_mat2[i,j] = np.sum(intersection_map) / np.sum(mask_3d2[j])
+#     #TODO: needs validation in edge cases?
+#     return iou_mat, ioa_mat1, ioa_mat2
+
+def get_iou_ioa_mat_sparse(mask_3d1, mask_3d2):
     assert len(mask_3d1.shape) == len(mask_3d2.shape) == 3
-    # assert mask_3d1.max() == mask_3d1.shape[0]
-    # assert mask_3d2.max() == mask_3d2.shape[0]
     assert np.array_equal(np.unique(mask_3d1), np.unique(mask_3d2))
-    assert np.array_equal(np.unique(mask_3d1), np.array([0,1]))
+    assert np.array_equal(np.unique(mask_3d1), np.array([0, 1]))
 
-    iou_mat = np.zeros((mask_3d1.shape[0], mask_3d2.shape[0])) # intersection / union
-    ioa_mat1 = np.zeros((mask_3d1.shape[0], mask_3d2.shape[0])) # intersection / area of mask1 ROI
-    ioa_mat2 = np.zeros((mask_3d1.shape[0], mask_3d2.shape[0])) # intersection / area of mask2 ROI
+    n1, n2 = mask_3d1.shape[0], mask_3d2.shape[0]
+    size = mask_3d1.shape[1] * mask_3d1.shape[2]
 
-    for i in range(mask_3d1.shape[0]):
-        for j in range(mask_3d2.shape[0]):
-            intersection_map = mask_3d1[i] * mask_3d2[j] > 0
-            if intersection_map.any():
-                union_map = mask_3d1[i] + mask_3d2[j] > 0
-                iou_mat[i,j] = np.sum(intersection_map) / np.sum(union_map)
-                ioa_mat1[i,j] = np.sum(intersection_map) / np.sum(mask_3d1[i])
-                ioa_mat2[i,j] = np.sum(intersection_map) / np.sum(mask_3d2[j])
-    #TODO: needs validation in edge cases?
-    return iou_mat, ioa_mat1, ioa_mat2
+    # Flatten and convert to sparse CSR format (shape: N x (H*W))
+    flat1 = mask_3d1.reshape(n1, size)
+    flat2 = mask_3d2.reshape(n2, size)
+    sparse1 = csr_matrix(flat1)
+    sparse2 = csr_matrix(flat2)
+
+    # Compute intersection: dot product between binary masks
+    # intersection = sparse1 @ sparse2.T  # (n1, n2) sparse matrix
+    intersection = sparse1.dot(sparse2.T).toarray().astype(np.float32) 
+
+    # Compute area (number of 1s per mask)
+    area1 = np.array(sparse1.sum(axis=1)).flatten().astype(np.float32)  # (n1,)
+    area2 = np.array(sparse2.sum(axis=1)).flatten().astype(np.float32)  # (n2,)
+
+    # Broadcast to form union: area1[:, None] + area2[None, :] - intersection
+    union = area1[:, None] + area2[None, :] - intersection
+
+    with np.errstate(divide='ignore', invalid='ignore'):
+        iou = np.where(union > 0, intersection / union, 0.0)
+        ioa1 = np.where(area1[:, None] > 0, intersection / area1[:, None], 0.0)
+        ioa2 = np.where(area2[None, :] > 0, intersection / area2[None, :], 0.0)
+    return iou, ioa1, ioa2
 
 
 def deal_with_multi_overlap(ioa_mat1, ioa_mat2, mask_3d1, mask_3d2, ioa_threshold=0.5):

@@ -389,6 +389,52 @@ def load_plane_data(session_name, opid=None, opid_ind=None, data_dir='/root/caps
 ## Bypass COMB and get data directly
 #########################################
 
+def load_raw_roi_fluorescence(session_key, plane_id,
+                              data_dir = Path('/root/capsule/data')):
+    ''' Load decrosstalked mean image for a given session and plane ID
+    It can be retrieved from extraction folder.
+    Faster than loading COMB object.
+    '''
+    if isinstance(data_dir, str):
+        data_dir = Path(data_dir)
+    processed_list = list(data_dir.glob(f'multiplane-ophys_{session_key}*processed*'))
+    assert len(processed_list) == 1, f'Multiple processed data found for {session_key}'
+    processed_path = processed_list[0]
+    plane_path = processed_path / plane_id
+    if not os.path.isdir(plane_path):
+        raise ValueError(f'No processed data found for {session_key}_{plane_id}')
+    extraction_path = plane_path / 'extraction'
+    h5_fn = extraction_path / f'{plane_id}_extraction.h5'
+    if not os.path.isfile(h5_fn):
+        h5_fn = extraction_path / 'extraction.h5'
+    with h5py.File(h5_fn, 'r') as h:
+        raw_roi_fluourescence = h['traces']['roi'][:]
+    return raw_roi_fluourescence
+
+
+def load_corrected_fluorescence(session_key, plane_id,
+                                 data_dir = Path('/root/capsule/data')):
+    ''' Load corrected fluorescence for a given session and plane ID
+    It can be retrieved from extraction folder.
+    Faster than loading COMB object.
+    '''
+    if isinstance(data_dir, str):
+        data_dir = Path(data_dir)
+    processed_list = list(data_dir.glob(f'multiplane-ophys_{session_key}*processed*'))
+    assert len(processed_list) == 1, f'Multiple processed data found for {session_key}'
+    processed_path = processed_list[0]
+    plane_path = processed_path / plane_id
+    if not os.path.isdir(plane_path):
+        raise ValueError(f'No processed data found for {session_key}_{plane_id}')
+    extraction_path = plane_path / 'extraction'
+    h5_fn = extraction_path / f'{plane_id}_extraction.h5'
+    if not os.path.isfile(h5_fn):
+        h5_fn = extraction_path / 'extraction.h5'
+    with h5py.File(h5_fn, 'r') as h:
+        corrected_fluorescence = h['traces']['corrected'][:]
+    return corrected_fluorescence
+
+
 def load_decrosstalked_mean_image(session_key, plane_id,
                                     data_dir = Path('/root/capsule/data')):
     ''' Load decrosstalked mean image for a given session and plane ID
@@ -443,6 +489,10 @@ def get_roi_table_from_plane_path(plane_path, apply_filter=True, small_roi_radiu
     plane_id = plane_path.name
     extraction_path = plane_path / 'extraction'
     extraction_fn = extraction_path / f'{plane_id}_extraction.h5'
+    if not os.path.isfile(extraction_fn):
+        extraction_fn = extraction_path / 'extraction.h5'
+    if not os.path.isfile(extraction_fn):
+        raise ValueError(f'No extraction file found for {plane_id}')
     pixel_masks = file_handling.load_sparse_array(extraction_fn)
             
     roi_table = rois.roi_table_from_mask_arrays(pixel_masks)
