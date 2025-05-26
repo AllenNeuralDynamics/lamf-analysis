@@ -16,6 +16,7 @@ from aind_ophys_data_access import rois
 from comb import file_handling
 
 from lamf_analysis.code_ocean import capsule_bod_utils as cbu
+import lamf_analysis.utils as lamf_utils
 
 DEFAULT_MOUNT_TO_IGNORE = ['fb4b5cef-4505-4145-b8bd-e41d6863d7a9', # Ophys_Extension_schema_10_14_2024_13_44
                             '35d1284e-4dfa-4ac3-9ba8-5ea1ae2fdaeb'], # ROI classifier V1
@@ -388,6 +389,52 @@ def load_plane_data(session_name, opid=None, opid_ind=None, data_dir='/root/caps
 ## Bypass COMB and get data directly
 #########################################
 
+def load_raw_roi_fluorescence(session_key, plane_id,
+                              data_dir = Path('/root/capsule/data')):
+    ''' Load decrosstalked mean image for a given session and plane ID
+    It can be retrieved from extraction folder.
+    Faster than loading COMB object.
+    '''
+    if isinstance(data_dir, str):
+        data_dir = Path(data_dir)
+    processed_list = list(data_dir.glob(f'multiplane-ophys_{session_key}*processed*'))
+    assert len(processed_list) == 1, f'Multiple processed data found for {session_key}'
+    processed_path = processed_list[0]
+    plane_path = processed_path / plane_id
+    if not os.path.isdir(plane_path):
+        raise ValueError(f'No processed data found for {session_key}_{plane_id}')
+    extraction_path = plane_path / 'extraction'
+    h5_fn = extraction_path / f'{plane_id}_extraction.h5'
+    if not os.path.isfile(h5_fn):
+        h5_fn = extraction_path / 'extraction.h5'
+    with h5py.File(h5_fn, 'r') as h:
+        raw_roi_fluourescence = h['traces']['roi'][:]
+    return raw_roi_fluourescence
+
+
+def load_corrected_fluorescence(session_key, plane_id,
+                                 data_dir = Path('/root/capsule/data')):
+    ''' Load corrected fluorescence for a given session and plane ID
+    It can be retrieved from extraction folder.
+    Faster than loading COMB object.
+    '''
+    if isinstance(data_dir, str):
+        data_dir = Path(data_dir)
+    processed_list = list(data_dir.glob(f'multiplane-ophys_{session_key}*processed*'))
+    assert len(processed_list) == 1, f'Multiple processed data found for {session_key}'
+    processed_path = processed_list[0]
+    plane_path = processed_path / plane_id
+    if not os.path.isdir(plane_path):
+        raise ValueError(f'No processed data found for {session_key}_{plane_id}')
+    extraction_path = plane_path / 'extraction'
+    h5_fn = extraction_path / f'{plane_id}_extraction.h5'
+    if not os.path.isfile(h5_fn):
+        h5_fn = extraction_path / 'extraction.h5'
+    with h5py.File(h5_fn, 'r') as h:
+        corrected_fluorescence = h['traces']['corrected'][:]
+    return corrected_fluorescence
+
+
 def load_decrosstalked_mean_image(session_key, plane_id,
                                     data_dir = Path('/root/capsule/data')):
     ''' Load decrosstalked mean image for a given session and plane ID
@@ -430,7 +477,7 @@ def get_roi_table_from_h5(session_key, plane_id,
     return roi_table
 
 
-def get_roi_table_from_plane_path(plane_path):
+def get_roi_table_from_plane_path(plane_path, apply_filter=True, small_roi_radius_threshold_in_um=4):
     ''' Load ROI table for a given plane path
     It can be retrieved from extraction folder.
     Faster than loading COMB object.
@@ -442,10 +489,42 @@ def get_roi_table_from_plane_path(plane_path):
     plane_id = plane_path.name
     extraction_path = plane_path / 'extraction'
     extraction_fn = extraction_path / f'{plane_id}_extraction.h5'
+    if not os.path.isfile(extraction_fn):
+        extraction_fn = extraction_path / 'extraction.h5'
+    if not os.path.isfile(extraction_fn):
+        raise ValueError(f'No extraction file found for {plane_id}')
     pixel_masks = file_handling.load_sparse_array(extraction_fn)
             
     roi_table = rois.roi_table_from_mask_arrays(pixel_masks)
     roi_table = roi_table.rename(columns={'id': 'cell_roi_id'})
+
+    if apply_filter:
+        range_y, range_x = lamf_utils.get_motion_correction_crop_xy_range(plane_path)
+
+        session_json = get_session_json_from_plane_path(plane_path)
+        fov_info = session_json['data_streams'][0]['ophys_fovs'][0] # assume this data is the same for all fovs
+        fov_height = fov_info['fov_height']
+        fov_width = fov_info['fov_width']
+        fov_scale_factor = float(fov_info['fov_scale_factor'])
+        
+        on_mask = np.zeros((fov_height, fov_width), dtype=bool)
+        on_mask[range_y[0]:range_y[1], range_x[0]:range_x[1]] = True
+        motion_mask = ~on_mask
+
+        def _touching_motion_border(row, motion_mask):
+            if (row.mask_matrix * motion_mask).any():
+                return True
+            else:
+                return False
+
+        roi_table['touching_motion_border'] = roi_table.apply(_touching_motion_border, axis=1, motion_mask=motion_mask)
+        
+        small_roi_radius_threshold_in_pix = small_roi_radius_threshold_in_um / float(fov_scale_factor)
+        area_threshold = np.pi * (small_roi_radius_threshold_in_pix**2)
+        
+        roi_table['small_roi'] = roi_table['mask_matrix'].apply(lambda x: len(np.where(x)[0]) < area_threshold)
+        roi_table['valid_roi'] = ~roi_table['touching_motion_border'] & ~roi_table['small_roi']
+
     return roi_table
 
 
@@ -462,6 +541,29 @@ def get_session_json_from_plane_path(plane_path):
     with open(session_json_fn) as f:
         session_json = json.load(f)
     return session_json
+
+
+def get_suite2p_ops_from_plane_path(plane_path):
+    ''' Load suite2p ops for a given plane path
+    '''
+    if isinstance(plane_path, str):
+        plane_path = Path(plane_path)
+    if not os.path.isdir(plane_path):
+        raise ValueError(f'Path not found ({plane_path})')
+    motion_correction_json_path = list((plane_path / 'motion_correction').glob('*_motion_correction_data_process.json'))
+    if len(motion_correction_json_path) == 0:
+        motion_correction_json_path = list((plane_path / 'motion_correction').glob('processing.json'))
+        if len(motion_correction_json_path) == 0:
+            raise ValueError(f'No extraction json found for {plane_path}')
+    elif len(motion_correction_json_path) > 1:
+        raise ValueError(f'Multiple extraction json found for {plane_path}')
+    with open(motion_correction_json_path[0]) as f:
+        motion_correction_json = json.load(f)
+    if 'parameters' in motion_correction_json:
+        suite2p_ops = motion_correction_json['parameters']['suite2p_args']
+    elif 'processing_pipeline' in motion_correction_json:
+        suite2p_ops = motion_correction_json['processing_pipeline']['data_processes'][0]['parameters']['suite2p_args']
+    return suite2p_ops
 
 
 def get_frame_rate_from_plane_path(plane_path):
