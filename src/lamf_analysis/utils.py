@@ -11,8 +11,6 @@ import pandas as pd
 import cv2
 from aind_ophys_utils.motion_border_utils import get_max_correction_from_df
 
-from lamf_analysis.code_ocean import capsule_data_utils as cdu
-
 
 ####################################################################################################
 # Code Ocean: Ophys
@@ -95,7 +93,7 @@ def get_motion_correction_crop_xy_range(plane_path: Union[Path, str]) -> tuple:
         '*_motion_transform.csv'))[0]
     motion_df = pd.read_csv(motion_csv)
 
-    session_json = cdu.get_session_json_from_plane_path(plane_path)
+    session_json = get_session_json_from_plane_path(plane_path)
     fov_info = session_json['data_streams'][0]['ophys_fovs'][0] # assume this data is the same for all fovs
     fov_height = fov_info['fov_height']
     fov_width = fov_info['fov_width']
@@ -113,6 +111,22 @@ def get_motion_correction_crop_xy_range(plane_path: Union[Path, str]) -> tuple:
     range_x = [int(motion_border.left), int(right)]
 
     return range_y, range_x
+
+
+def get_session_json_from_plane_path(plane_path):
+    ''' Load session.json for a given plane path
+    # Note: capsule_data_utils.py has the same function, but cannot import cdu due to circular import
+    '''
+    if isinstance(plane_path, str):
+        plane_path = Path(plane_path)
+    if not os.path.isdir(plane_path):
+        raise ValueError(f'Path not found ({plane_path})')
+    session_name = plane_path.parent.name.split('_processed')[0]
+    raw_path = plane_path.parent.parent / session_name
+    session_json_fn = Path(raw_path) / 'session.json'
+    with open(session_json_fn) as f:
+        session_json = json.load(f)
+    return session_json
 
 
 ####################################################################################################
