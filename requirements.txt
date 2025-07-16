@@ -12,3 +12,4 @@ tifffile
 xarray
 dask[distributed]
 scanimage_tiff_reader
+aind-ophys-utils
