@@ -389,11 +389,9 @@ def load_plane_data(session_name, opid=None, opid_ind=None, data_dir='/root/caps
 ## Bypass COMB and get data directly
 #########################################
 
-def load_raw_roi_fluorescence(session_key, plane_id,
-                              data_dir = Path('/root/capsule/data')):
-    ''' Load decrosstalked mean image for a given session and plane ID
-    It can be retrieved from extraction folder.
-    Faster than loading COMB object.
+def get_plane_path_from_session_key_and_plane_id(session_key, plane_id,
+                                                data_dir=Path('/root/capsule/data')):
+    ''' Get plane path from session key and plane ID
     '''
     if isinstance(data_dir, str):
         data_dir = Path(data_dir)
@@ -403,6 +401,32 @@ def load_raw_roi_fluorescence(session_key, plane_id,
     plane_path = processed_path / plane_id
     if not os.path.isdir(plane_path):
         raise ValueError(f'No processed data found for {session_key}_{plane_id}')
+    return plane_path
+
+
+def load_dff(session_key, plane_id,
+             data_dir=Path('/root/capsule/data')):
+    ''' Load dff for a given session and plane ID
+    It can be retrieved from extraction folder.
+    Faster than loading COMB object.
+    '''
+    plane_path = get_plane_path_from_session_key_and_plane_id(session_key, plane_id, data_dir=data_dir)
+    dff_path = plane_path / 'dff'
+    h5_fn = dff_path / f'{plane_id}_dff.h5'
+    if not os.path.isfile(h5_fn):
+        h5_fn = dff_path / 'dff.h5'
+    with h5py.File(h5_fn, 'r') as h:
+        dff = h['data'][:]
+    return dff
+
+
+def load_raw_roi_fluorescence(session_key, plane_id,
+                              data_dir=Path('/root/capsule/data')):
+    ''' Load decrosstalked mean image for a given session and plane ID
+    It can be retrieved from extraction folder.
+    Faster than loading COMB object.
+    '''
+    plane_path = get_plane_path_from_session_key_and_plane_id(session_key, plane_id, data_dir=data_dir)
     extraction_path = plane_path / 'extraction'
     h5_fn = extraction_path / f'{plane_id}_extraction.h5'
     if not os.path.isfile(h5_fn):
@@ -418,14 +442,7 @@ def load_corrected_fluorescence(session_key, plane_id,
     It can be retrieved from extraction folder.
     Faster than loading COMB object.
     '''
-    if isinstance(data_dir, str):
-        data_dir = Path(data_dir)
-    processed_list = list(data_dir.glob(f'multiplane-ophys_{session_key}*processed*'))
-    assert len(processed_list) == 1, f'Multiple processed data found for {session_key}'
-    processed_path = processed_list[0]
-    plane_path = processed_path / plane_id
-    if not os.path.isdir(plane_path):
-        raise ValueError(f'No processed data found for {session_key}_{plane_id}')
+    plane_path = get_plane_path_from_session_key_and_plane_id(session_key, plane_id, data_dir=data_dir)
     extraction_path = plane_path / 'extraction'
     h5_fn = extraction_path / f'{plane_id}_extraction.h5'
     if not os.path.isfile(h5_fn):
@@ -436,19 +453,12 @@ def load_corrected_fluorescence(session_key, plane_id,
 
 
 def load_decrosstalked_mean_image(session_key, plane_id,
-                                    data_dir = Path('/root/capsule/data')):
+                                    data_dir=Path('/root/capsule/data')):
     ''' Load decrosstalked mean image for a given session and plane ID
     It can be retrieved from extraction folder.
     Faster than loading COMB object.
     '''
-    if isinstance(data_dir, str):
-        data_dir = Path(data_dir)
-    processed_list = list(data_dir.glob(f'multiplane-ophys_{session_key}*processed*'))
-    assert len(processed_list) == 1, f'Multiple processed data found for {session_key}'
-    processed_path = processed_list[0]
-    plane_path = processed_path / plane_id
-    if not os.path.isdir(plane_path):
-        raise ValueError(f'No processed data found for {session_key}_{plane_id}')
+    plane_path = get_plane_path_from_session_key_and_plane_id(session_key, plane_id, data_dir=data_dir)
     extraction_path = plane_path / 'extraction'
     h5_fn = extraction_path / f'{plane_id}_extraction.h5'
     if not os.path.isfile(h5_fn):
