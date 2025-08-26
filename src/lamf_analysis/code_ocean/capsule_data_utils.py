@@ -389,13 +389,23 @@ def load_plane_data(session_name, opid=None, opid_ind=None, data_dir='/root/caps
 ## Bypass COMB and get data directly
 #########################################
 
+def get_raw_data_dir(session_key, data_dir=Path('/root/capsule/data')):
+    time_regex_format = '[0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+    raw_path_list = list(data_dir.glob(f'multiplane-ophys_{session_key}_{time_regex_format}'))
+    assert len(raw_path_list) == 1, f'Multiple or no raw data found for {session_key}'
+    raw_path = raw_path_list[0]
+    return raw_path
+
+
 def get_plane_path_from_session_key_and_plane_id(session_key, plane_id,
                                                 data_dir=Path('/root/capsule/data')):
     ''' Get plane path from session key and plane ID
     '''
     if isinstance(data_dir, str):
         data_dir = Path(data_dir)
-    processed_list = list(data_dir.glob(f'multiplane-ophys_{session_key}*processed*'))
+    time_regex_format = '[0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+    date_regex_format = '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'    
+    processed_list = list(data_dir.glob(f'multiplane-ophys_{session_key}_{time_regex_format}_processed_{date_regex_format}_{time_regex_format}'))
     assert len(processed_list) == 1, f'Multiple processed data found for {session_key}'
     processed_path = processed_list[0]
     plane_path = processed_path / plane_id
