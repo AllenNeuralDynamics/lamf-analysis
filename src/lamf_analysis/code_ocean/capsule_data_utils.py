@@ -20,7 +20,8 @@ import lamf_analysis.utils as lamf_utils
 
 DEFAULT_MOUNT_TO_IGNORE = ['fb4b5cef-4505-4145-b8bd-e41d6863d7a9', # Ophys_Extension_schema_10_14_2024_13_44
                             '35d1284e-4dfa-4ac3-9ba8-5ea1ae2fdaeb'], # ROI classifier V1
-
+TIME_FORMAT = '[0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+DATE_FORMAT = '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
 
 def get_client():
     domain="https://codeocean.allenneuraldynamics.org/"
@@ -389,13 +390,21 @@ def load_plane_data(session_name, opid=None, opid_ind=None, data_dir='/root/caps
 ## Bypass COMB and get data directly
 #########################################
 
+def get_raw_data_dir(session_key, data_dir=Path('/root/capsule/data')):
+    raw_path_list = list(data_dir.glob(f'multiplane-ophys_{session_key}_{TIME_FORMAT}'))
+    assert len(raw_path_list) == 1, f'Multiple or no raw data found for {session_key}'
+    raw_path = raw_path_list[0]
+    return raw_path
+
+
 def get_plane_path_from_session_key_and_plane_id(session_key, plane_id,
                                                 data_dir=Path('/root/capsule/data')):
     ''' Get plane path from session key and plane ID
     '''
     if isinstance(data_dir, str):
         data_dir = Path(data_dir)
-    processed_list = list(data_dir.glob(f'multiplane-ophys_{session_key}*processed*'))
+    
+    processed_list = list(data_dir.glob(f'multiplane-ophys_{session_key}_{TIME_FORMAT}_processed_{DATE_FORMAT}_{TIME_FORMAT}'))
     assert len(processed_list) == 1, f'Multiple processed data found for {session_key}'
     processed_path = processed_list[0]
     plane_path = processed_path / plane_id
