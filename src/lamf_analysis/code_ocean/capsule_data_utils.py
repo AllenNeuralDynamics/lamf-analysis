@@ -404,7 +404,7 @@ def get_plane_path_from_session_key_and_plane_id(session_key, plane_id,
     if isinstance(data_dir, str):
         data_dir = Path(data_dir)
     time_regex_format = '[0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
-    date_regex_format = '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'    
+    date_regex_format = '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
     processed_list = list(data_dir.glob(f'multiplane-ophys_{session_key}_{time_regex_format}_processed_{date_regex_format}_{time_regex_format}'))
     assert len(processed_list) == 1, f'Multiple processed data found for {session_key}'
     processed_path = processed_list[0]
