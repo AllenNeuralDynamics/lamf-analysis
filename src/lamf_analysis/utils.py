@@ -121,9 +121,12 @@ def get_session_json_from_plane_path(plane_path):
         plane_path = Path(plane_path)
     if not os.path.isdir(plane_path):
         raise ValueError(f'Path not found ({plane_path})')
-    session_name = plane_path.parent.name.split('_processed')[0]
-    raw_path = plane_path.parent.parent / session_name
-    session_json_fn = Path(raw_path) / 'session.json'
+    try:
+        session_json_fn = next(plane_path.parent.rglob('*session.json'))
+    except:
+        session_name = plane_path.parent.name.split('_processed')[0]
+        raw_path = plane_path.parent.parent / session_name
+        session_json_fn = raw_path / 'session.json'
     with open(session_json_fn) as f:
         session_json = json.load(f)
     return session_json
