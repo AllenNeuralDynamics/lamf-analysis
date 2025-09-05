@@ -115,12 +115,13 @@ def get_motion_correction_crop_xy_range(plane_path: Union[Path, str]) -> tuple:
 
 def get_session_json_from_plane_path(plane_path):
     ''' Load session.json for a given plane path
-    # Note: capsule_data_utils.py has the same function, but cannot import cdu due to circular import
     '''
     if isinstance(plane_path, str):
         plane_path = Path(plane_path)
     if not os.path.isdir(plane_path):
         raise ValueError(f'Path not found ({plane_path})')
+    try:
+        session_json_fn = next(plane_path.parent.rglob('*session.json'))
     except StopIteration:
         session_name = plane_path.parent.name.split('_processed')[0]
         raw_path = plane_path.parent.parent / session_name
