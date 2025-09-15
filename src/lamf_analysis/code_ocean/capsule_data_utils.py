@@ -391,6 +391,7 @@ def load_plane_data(session_name, opid=None, opid_ind=None, data_dir='/root/caps
 #########################################
 
 def get_raw_data_dir(session_key, data_dir=Path('/root/capsule/data')):
+    data_dir = Path(data_dir)
     raw_path_list = list(data_dir.glob(f'multiplane-ophys_{session_key}_{TIME_FORMAT}'))
     assert len(raw_path_list) == 1, f'Multiple or no raw data found for {session_key}'
     raw_path = raw_path_list[0]
