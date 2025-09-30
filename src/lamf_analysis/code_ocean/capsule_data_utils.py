@@ -9,7 +9,10 @@ import h5py
 
 from codeocean import CodeOcean
 from codeocean.data_asset import DataAssetSearchParams
+from codeocean.components import SearchFilter
+
 import aind_session
+from aind_session import Session
 from aind_ophys_data_access import capsule
 from comb.behavior_ophys_dataset import BehaviorOphysDataset, BehaviorMultiplaneOphysDataset
 from aind_ophys_data_access import rois
@@ -55,6 +58,59 @@ def get_data_asset_search_results(query_str, mouse_id=None):
     return results
 
 
+def set_data_asset_params(mouse_id, data_name='multiplane-ophys', data_level='raw',
+                          offset=0, limit=1000):
+    data_asset_params = DataAssetSearchParams(
+        offset=offset,
+        limit=limit,
+        sort_order="desc",
+        sort_field="name",
+        archived=False,
+        favorite=False,
+        # query="name:'multiplane-ophys'",
+        filters=[        
+            SearchFilter(
+                key="tags",
+                value=str(mouse_id)
+            ),
+            SearchFilter(
+                key="name",
+                value=data_name
+            ),
+            SearchFilter(
+                key="tags",
+                value=data_level
+            )
+        ]
+    )
+    return data_asset_params
+
+
+def get_mouse_sessions_by_filters(mouse_id, data_name='multiplane-ophys', data_level='raw',
+                                  offset=0, limit=1000):
+    client = get_client()
+    data_asset_params = set_data_asset_params(mouse_id=mouse_id, data_name=data_name, data_level=data_level,
+                                              offset=offset, limit=limit)
+    results = []
+    while True:
+        data_asset_params = set_data_asset_params(mouse_id=mouse_id, 
+                                                  data_name=data_name, data_level=data_level,
+                                                  offset=offset, limit=limit)
+        data_asset_search_results = client.data_assets.search_data_assets(data_asset_params)
+        results.extend(data_asset_search_results.results)
+        if ~data_asset_search_results.has_more:
+            break
+        data_asset_params.offset += data_asset_params.limit
+    
+    sessions = set()
+    for restuls in results:
+        name = restuls.name
+        session = Session(name)
+        sessions.add(session)
+    sessions = tuple(sorted(sessions, key=lambda s: s.dt))
+    return sessions
+
+
 def get_mouse_session_df(mouse_id,
                          processed_date_after=None,
                          processed_date_before=None,
@@ -68,7 +124,9 @@ def get_mouse_session_df(mouse_id,
         * capsule_id and commit_id can be used to filter (hopefully using look-up table)
     '''
     success = True
-    mouse_sessions = aind_session.get_sessions(subject_id=mouse_id)
+    # mouse_sessions = aind_session.get_sessions(subject_id=mouse_id) # This errors out with "unauthorized issue"
+    # Temporary fix while awaiting SciComp solution 2025/09/30 JK
+    mouse_sessions = get_mouse_sessions_by_filters(mouse_id=mouse_id)
     # to prevent errors (happens when adding faulty tags)
     mouse_sessions = tuple([ms for ms in mouse_sessions if ms.subject_id == str(mouse_id)])
 
