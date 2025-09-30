@@ -6,6 +6,7 @@ import json
 import glob
 from pathlib import Path
 import h5py
+import time
 
 from codeocean import CodeOcean
 from codeocean.data_asset import DataAssetSearchParams
@@ -20,6 +21,8 @@ from comb import file_handling
 
 from lamf_analysis.code_ocean import capsule_bod_utils as cbu
 import lamf_analysis.utils as lamf_utils
+from lamf_analysis.code_ocean import docdb_utils
+
 
 DEFAULT_MOUNT_TO_IGNORE = ['fb4b5cef-4505-4145-b8bd-e41d6863d7a9', # Ophys_Extension_schema_10_14_2024_13_44
                             '35d1284e-4dfa-4ac3-9ba8-5ea1ae2fdaeb'], # ROI classifier V1
@@ -209,6 +212,14 @@ def get_mouse_session_df(mouse_id,
             warnings.warn(f'No matching pupil data asset found for {mouse_session_df[mouse_session_df["pupil_data_asset_id"] == 0].raw_data_date.values}')
         
     return success, mouse_session_df
+
+
+def add_dff_long_baseline_window_to_mouse_df(mouse_df):
+    processed_asset_ids = mouse_df.processed_data_asset_id.to_list()
+    dff_long_windows = docdb_utils.get_dff_long_baseline_window(processed_asset_ids)
+    dff_long_window_dict = {item['code_ocean_id']: item['long_window'] for item in dff_long_windows}
+    mouse_df['dff_long_window'] = mouse_df['processed_data_asset_id'].map(dff_long_window_dict)
+    return mouse_df
         
 
 def attach_mouse_data_assets(mouse_session_df, include_pupil=True):
@@ -230,6 +241,66 @@ def attach_mouse_data_assets(mouse_session_df, include_pupil=True):
     except:
         success = False
     return success
+
+
+def check_attached_data_assets(mouse_df_to_attach, 
+                               data_dir=Path('/root/capsule/data'),
+                               include_pupil=False, pupil_suffix='dlc-eye'):
+    expected_num_assets = 3 if include_pupil else 2
+    raw_asset_names = mouse_df_to_attach['raw_asset_name'].values
+    for _, row in mouse_df_to_attach.iterrows():
+        raw_asset_name = row['raw_asset_name']
+        processed_date = row['processed_data_date']        
+        matching_dirs = [dd for dd in list(data_dir.iterdir()) if (raw_asset_name in dd.name)]
+        if len(matching_dirs) == 0:
+            print(f'No matching data dir found for raw asset {raw_asset_name}')
+            return False
+        if len(matching_dirs) > expected_num_assets:
+            print(f'More than expected data dirs found for raw asset {raw_asset_name}: {matching_dirs}')
+            return False
+        raw_dir = [dd for dd in matching_dirs if dd.name == raw_asset_name]
+        if len(raw_dir) == 0:
+            print(f'No raw data dir found for raw asset {raw_asset_name}')
+            return False
+        processed_dir = [dd for dd in matching_dirs if processed_date in dd.name]
+        if len(processed_dir) == 0:
+            print(f'No processed data dir found for raw asset {raw_asset_name} with processed date {processed_date}')
+            return False
+        elif len(processed_dir) > 1:
+            print(f'More than one processed data dir found for raw asset {raw_asset_name} with processed date {processed_date}: {processed_dir}')
+            return False
+        if include_pupil:
+            pupil_dir = [dd for dd in matching_dirs if pupil_suffix in dd.name]
+            if len(pupil_dir) == 0:
+                print(f'No pupil data dir found for raw asset {raw_asset_name}')
+                return False
+            elif len(pupil_dir) > 1:
+                print(f'More than one pupil data dir found for raw asset {raw_asset_name}: {pupil_dir}')
+                return False
+    return True
+    
+
+def attach_data_assets_with_repeats(mouse_df_to_attach, data_dir=Path('/root/capsule/data'), 
+                                    max_repeats=5, include_pupil=False, pupil_suffix='dlc-eye'):
+    for repeat_i in range(max_repeats):
+        attach_success = attach_mouse_data_assets(mouse_df_to_attach,
+                                                  include_pupil=include_pupil)
+        if attach_success:
+            print(f'It says attach success after {repeat_i+1} tries!')
+            check_success = check_attached_data_assets(mouse_df_to_attach,
+                                                      data_dir=data_dir,
+                                                      include_pupil=include_pupil,
+                                                      pupil_suffix=pupil_suffix)
+            if check_success:
+                print(f'Attach verified after {repeat_i+1} tries!')
+                return True
+            else:
+                print(f'Attach verification failed after {repeat_i+1} tries. Retrying...')
+                time.sleep(2)
+        else:
+            print(f'Attach failed on try {repeat_i+1}. Retrying...')
+    print(f'Attach failed after {max_repeats} tries.')
+    return False
 
 
 def get_session_info(mouse_id, data_dir='/root/capsule/data'):
