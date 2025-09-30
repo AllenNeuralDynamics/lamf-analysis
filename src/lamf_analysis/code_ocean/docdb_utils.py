@@ -2,18 +2,23 @@ import pandas as pd
 from aind_data_access_api.document_db import MetadataDbClient
 
 
+def get_docdb_api_client():
+    API_GATEWAY_HOST = "api.allenneuraldynamics.org"
+    DATABASE = "metadata_index"
+    COLLECTION = "data_assets"
+    docdb_api_client = MetadataDbClient(
+            host=API_GATEWAY_HOST,
+            database=DATABASE,
+            collection=COLLECTION,
+        )
+    return docdb_api_client
+    
+
 def get_session_infos_from_docdb(subject_id, docdb_api_client=None,
                                  data_type='multiplane-ophys',
                                  filter_test_data=True):
     if docdb_api_client is None:
-        API_GATEWAY_HOST = "api.allenneuraldynamics.org"
-        DATABASE = "metadata_index"
-        COLLECTION = "data_assets"
-        docdb_api_client = MetadataDbClient(
-                host=API_GATEWAY_HOST,
-                database=DATABASE,
-                collection=COLLECTION,
-            )
+        docdb_api_client = get_docdb_api_client()
 
     query = {"subject.subject_id": subject_id, "data_description.data_level": "raw"}
     subject_response = docdb_api_client.retrieve_docdb_records(
@@ -59,3 +64,51 @@ def _filter_test_data(session_infos):
     last_acq_date = last_session['acquisition_date'].max()
     session_infos = session_infos.query('acquisition_date <= @last_acq_date').copy()
     return session_infos
+
+
+def get_dff_long_baseline_window(processed_asset_ids, docdb_api_client=None):
+    if docdb_api_client is None:
+        docdb_api_client = get_docdb_api_client()
+    assert isinstance(processed_asset_ids, list), "processed_asset_ids should be a list"
+    agg_query = [
+        # Match documents with "dF/F estimation" in data processes
+        {
+            "$match": {
+                "external_links.Code Ocean": {"$in": processed_asset_ids}
+            }
+        },
+        # Project to filter only the dF/F estimation processes
+        {
+            "$project": {
+                "_id": 1,
+                "name": 1,
+                "code_ocean_id": {"$arrayElemAt": ["$external_links.Code Ocean", 0]},  # Extract just the first Code Ocean ID as a string
+                "df_f_params": {
+                    "$filter": {
+                        "input": "$processing.processing_pipeline.data_processes",
+                        "as": "process",
+                        "cond": {"$eq": ["$$process.name", "dF/F estimation"]}
+                    }
+                }
+            }
+        },
+        # Only keep documents where long_window exists and is not empty
+        {
+            "$match": {
+                "df_f_params.parameters.long_window": {"$exists": True, "$ne": []}
+            }
+        },
+        # Project just the fields we want in the output, extracting just the first element of the array
+        {
+            "$project": {
+                "_id": 1,
+                "name": 1,
+                "code_ocean_id": 1,  # Keep the Code Ocean IDs in the final projection
+                "long_window": {"$arrayElemAt": ["$df_f_params.parameters.long_window", 0]}
+            }
+        },
+    ]
+
+    # Execute the aggregation using the client
+    results = docdb_api_client.aggregate_docdb_records(agg_query)
+    return results
