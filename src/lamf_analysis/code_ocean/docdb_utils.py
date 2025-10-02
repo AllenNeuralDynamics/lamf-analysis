@@ -1,5 +1,7 @@
+import os
 import pandas as pd
 from aind_data_access_api.document_db import MetadataDbClient
+from codeocean import CodeOcean
 
 
 def get_docdb_api_client():
@@ -12,6 +14,13 @@ def get_docdb_api_client():
             collection=COLLECTION,
         )
     return docdb_api_client
+
+
+def get_co_client():
+    domain = "https://codeocean.allenneuraldynamics.org/"
+    token = os.getenv("API_SECRET")
+    client = CodeOcean(domain=domain, token=token)
+    return client
     
 
 def get_session_infos_from_docdb(subject_id, docdb_api_client=None,
@@ -19,7 +28,7 @@ def get_session_infos_from_docdb(subject_id, docdb_api_client=None,
                                  filter_test_data=True):
     if docdb_api_client is None:
         docdb_api_client = get_docdb_api_client()
-
+    subject_id = str(subject_id)
     query = {"subject.subject_id": subject_id, "data_description.data_level": "raw"}
     subject_response = docdb_api_client.retrieve_docdb_records(
                     filter_query=query,                
@@ -112,3 +121,105 @@ def get_dff_long_baseline_window(processed_asset_ids, docdb_api_client=None):
     # Execute the aggregation using the client
     results = docdb_api_client.aggregate_docdb_records(agg_query)
     return results
+
+
+def get_processed_data_info(mouse_id, docdb_api_client=None):
+    if docdb_api_client is None:
+        docdb_api_client = get_docdb_api_client()
+    agg_pipeline = [
+        # Match documents with 'processed' in the name (case-insensitive)
+        # And ensure processing.processing_pipeline.data_processes exists
+        {
+            '$match': {
+                'name': {'$regex': 'processed', '$options': 'i'},
+                'processing.processing_pipeline.data_processes': {
+                    '$exists': True,
+                    '$elemMatch': {
+                        "name": "dF/F estimation",
+                    }
+                },
+                'subject.subject_id': str(mouse_id),
+            }
+        },
+        # Project to include name and count of data_processes
+        {
+            '$project': {
+                'name': 1,
+                '_id': 1,
+                'external_links': 1,
+                'long_window': {
+                    '$let': {
+                        'vars': {
+                            'df_processes': {
+                                '$filter': {
+                                    'input': '$processing.processing_pipeline.data_processes',
+                                    'as': 'process',
+                                    'cond': {'$eq': ['$$process.name', 'dF/F estimation']}
+                                }
+                            }
+                        },
+                        'in': {'$arrayElemAt': ['$$df_processes.parameters.long_window', 0]}
+                    }
+                }
+            }
+        },
+        {
+            '$limit': 1000
+        }
+    ]
+
+    results = docdb_api_client.aggregate_docdb_records(pipeline=agg_pipeline)
+
+    results_df = pd.DataFrame(results)
+    results_df['data_asset_id'] = results_df['external_links'].apply(lambda x: x['Code Ocean'][0])
+    results_df['processed_date'] = results_df['name'].str.split('_').str[-2]
+    results_df['raw_name'] = results_df['name'].str.split('_processed_').str[0]
+
+    results_df = results_df[['raw_name', 'long_window', 'data_asset_id', 'processed_date', 'name' ]]
+
+    return results_df
+
+
+def filter_data_asset_info_by_date(data_asset_info, cutoff_date='2025-09-02'):
+    ''' Filter data_asset_info DataFrame to only include entries with processed_date
+        less than or equal to cutoff_date.
+        
+        Args:
+            data_asset_info (pd.DataFrame): DataFrame containing data asset information.
+            cutoff_date (str): Cutoff date in 'YYYY-MM-DD' format.
+                Default: '2025-09-02', when correct decrosstalk was applied. (It was wrong from 2025-02-03, but before that, there was no information about long_window)
+        
+        Returns:
+            pd.DataFrame: Filtered DataFrame.
+    '''
+    filtered_info = data_asset_info[data_asset_info['processed_date'] >= cutoff_date].copy()
+    return filtered_info
+
+
+def filter_data_asset_info_by_long_window(data_asset_info, target_long_window):
+    ''' Filter data_asset_info DataFrame to only include entries with long_window
+        equal to target_long_window.
+        
+        Args:
+            data_asset_info (pd.DataFrame): DataFrame containing data asset information.
+            target_long_window (int): Target long_window value.
+                Either 60 or 1800 (1800 can be better for inhibitory neurons)
+        
+        Returns:
+            pd.DataFrame: Filtered DataFrame.
+    '''
+    accepted_target_values = [60, 1800]
+    assert target_long_window in accepted_target_values, f"target_long_window should be one of {accepted_target_values}"
+    filtered_info = data_asset_info[data_asset_info['long_window'] == target_long_window].copy()
+    return filtered_info
+
+
+def check_exist_in_code_ocean(results_df, co_client=None):
+    if co_client is None:
+        co_client = get_co_client()
+    for _, row in results_df.iterrows():
+        data_asset_id = row['data_asset_id']
+        data_asset_name = row['name']
+        data_asset = co_client.data_assets.get_data_asset(data_asset_id)
+        assert data_asset.name == data_asset_name, f"Data asset {data_asset_id} not in Code Ocean"
+    return True
