@@ -174,6 +174,8 @@ def get_processed_data_info(mouse_id, docdb_api_client=None):
     results_df['data_asset_id'] = results_df['external_links'].apply(lambda x: x['Code Ocean'][0])
     results_df['processed_date'] = results_df['name'].str.split('_').str[-2]
     results_df['raw_name'] = results_df['name'].str.split('_processed_').str[0]
+    if 'long_window' not in results_df.columns:
+        results_df['long_window'] = None
 
     results_df = results_df[['raw_name', 'long_window', 'data_asset_id', 'processed_date', 'name' ]]
 
