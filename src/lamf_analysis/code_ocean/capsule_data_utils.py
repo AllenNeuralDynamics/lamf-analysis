@@ -152,7 +152,7 @@ def get_mouse_session_df(mouse_id,
             continue
         raw_date = session.raw_data_asset.name.split('_')[2] 
         processed_data = [da for da in session.data_assets if '_processed_' in da.name]
-        processed_data = [da for da in processed_data if (da.provenance.commit is not None)]
+        # processed_data = [da for da in processed_data if (da.provenance.commit is not None)]
         if include_pupil:
             pupil_data = [da for da in session.data_assets if 'dlc-eye' in da.name]
             pupil_raw_data = [np.setdiff1d(da.provenance.data_assets, DEFAULT_MOUNT_TO_IGNORE) for da in pupil_data]
