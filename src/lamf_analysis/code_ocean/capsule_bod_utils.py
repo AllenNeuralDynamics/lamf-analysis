@@ -163,6 +163,31 @@ def get_running_speed(bod, ophys_timestamps):
     return running_speed
 
 
+def get_licks_df(bod):
+    '''
+    Creates a dataframe containing columns for 'timestamps', 'licks', where values are from
+    a binary array of the length of stimulus timestamps where frames with no lick are 0 and frames with a lick are 1
+    
+    Parameters:
+    -----------
+    bod: obj
+        COMB BehaviorOphysDataset object
+
+    Returns:
+    --------
+    Pandas.DataFrame with columns 'timestamps' and 'licks'
+
+    '''
+    timestamps = bod.stimulus_timestamps.copy()
+    licks = bod.licks.copy()
+    lick_array = np.zeros(timestamps.shape)
+    lick_array[licks.frame.values] = 1
+    licks_df = pd.DataFrame(data=timestamps, columns=['timestamps'])
+    licks_df['licks'] = lick_array
+    
+    return licks_df
+
+
 # redundant function from GLM design_matrix_tools.py
 def interpolate_to_ophys_timestamps(ophys_timestamps, df):
     """ Interpolate timeseries onto ophys timestamps
