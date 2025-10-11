@@ -171,13 +171,54 @@ def get_processed_data_info(mouse_id, docdb_api_client=None):
     results = docdb_api_client.aggregate_docdb_records(pipeline=agg_pipeline)
 
     results_df = pd.DataFrame(results)
-    results_df['data_asset_id'] = results_df['external_links'].apply(lambda x: x['Code Ocean'][0])
+    results_df['processed_asset_id'] = results_df['external_links'].apply(lambda x: x['Code Ocean'][0])
     results_df['processed_date'] = results_df['name'].str.split('_').str[-2]
     results_df['raw_name'] = results_df['name'].str.split('_processed_').str[0]
     if 'long_window' not in results_df.columns:
         results_df['long_window'] = None
 
-    results_df = results_df[['raw_name', 'long_window', 'data_asset_id', 'processed_date', 'name' ]]
+    results_df = results_df[['raw_name', 'long_window', 'processed_asset_id', 'processed_date', 'name']].rename(columns={'name': 'processed_name'})
+
+    return results_df
+
+
+def get_dlc_eye_data_info(mouse_id, docdb_api_client=None):
+    if docdb_api_client is None:
+        docdb_api_client = get_docdb_api_client()
+    agg_pipeline = [
+        {
+            '$match': {
+                'name': {'$regex': 'dlc-eye', '$options': 'i'},
+                'processing.processing_pipeline.data_processes': {
+                    '$exists': True,
+                    '$elemMatch': {
+                        "code_url": "https://github.com/AllenNeuralDynamics/aind-capsule-eye-tracking",
+                    }
+                },
+                'subject.subject_id': str(mouse_id),
+            }
+        },
+        # Project to include name and count of data_processes
+        {
+            '$project': {
+                'name': 1,
+                '_id': 1,
+                'external_links': 1,
+            }
+        },
+        {
+            '$limit': 1000
+        }
+    ]
+
+    results = docdb_api_client.aggregate_docdb_records(pipeline=agg_pipeline)
+
+    results_df = pd.DataFrame(results)
+    results_df['dlc_asset_id'] = results_df['external_links'].apply(lambda x: x['Code Ocean'][0])
+    results_df['dlc_date'] = results_df['name'].str.split('_').str[-2]
+    results_df['raw_name'] = results_df['name'].str.split('_dlc-eye_').str[0]
+    
+    results_df = results_df[['raw_name', 'dlc_asset_id', 'dlc_date', 'name']].rename(columns={'name': 'dlc_name'})
 
     return results_df
 
