@@ -319,7 +319,8 @@ def get_derived_data_assets(mouse_id, suffix, parameters=None, docdb_api_client=
 
     results_df = pd.DataFrame(results)
     results_df['derived_date'] = results_df['name'].str.split('_').str[-2]
-    results_df['raw_name'] = results_df['name'].str.lower().split(f'_{suffix.lower()}_')[0]
+    results_df['raw_name'] = results_df['name'].apply(lambda x: x.lower().split(f'_{suffix.lower()}_')[0])
+
     # remove one column called '_id'
     results_df = results_df.drop(columns=['_id'], errors='ignore')
     
