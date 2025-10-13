@@ -146,7 +146,7 @@ def get_processed_data_info(mouse_id, docdb_api_client=None):
             '$project': {
                 'name': 1,
                 '_id': 1,
-                'external_links': 1,
+                "code_ocean_id": {"$arrayElemAt": ["$external_links.Code Ocean", 0]},
                 'long_window': {
                     '$let': {
                         'vars': {
@@ -171,13 +171,14 @@ def get_processed_data_info(mouse_id, docdb_api_client=None):
     results = docdb_api_client.aggregate_docdb_records(pipeline=agg_pipeline)
 
     results_df = pd.DataFrame(results)
-    results_df['processed_asset_id'] = results_df['external_links'].apply(lambda x: x['Code Ocean'][0])
     results_df['processed_date'] = results_df['name'].str.split('_').str[-2]
     results_df['raw_name'] = results_df['name'].str.split('_processed_').str[0]
     if 'long_window' not in results_df.columns:
         results_df['long_window'] = None
 
-    results_df = results_df[['raw_name', 'long_window', 'processed_asset_id', 'processed_date', 'name']].rename(columns={'name': 'processed_name'})
+    results_df = results_df[['raw_name', 'long_window', 'code_ocean_id', 'processed_date', 'name']].rename(
+        columns={'name': 'processed_name',
+                 'code_ocean_id': 'processed_asset_id'})
 
     return results_df
 
@@ -266,3 +267,65 @@ def check_exist_in_code_ocean(results_df, co_client=None):
         data_asset = co_client.data_assets.get_data_asset(data_asset_id)
         assert data_asset.name == data_asset_name, f"Data asset {data_asset_id} not in Code Ocean"
     return True
+
+
+# Getting derived assets (from analysis)
+def get_derived_data_assets(mouse_id, suffix, parameters=None, docdb_api_client=None):
+    if docdb_api_client is None:
+        docdb_api_client = get_docdb_api_client()
+    
+    agg_pipeline = [
+        {        
+            '$match': {
+                'name': {'$regex': suffix, '$options': 'i'},
+                'subject.subject_id': str(mouse_id),
+            }
+        },
+        {
+            '$project': {
+                "_id": 1,
+                "name": 1,
+                "code_ocean_id": {"$arrayElemAt": ["$external_links.Code Ocean", 0]},
+                "process": {
+                    "$arrayElemAt": ["$processing.processing_pipeline.data_processes", 0]
+                }
+            }
+        },
+        
+        {
+            '$limit': 1000
+        }
+    ]
+    if parameters is not None:
+        assert isinstance(parameters, dict), "parameters should be a dictionary"
+        match_params = {f"process.parameters.{k}": v for k, v in parameters.items()}
+        project_params = {f"{k}": f"$process.parameters.{k}" for k in parameters.keys()}
+        base_project = {'name': 1,
+                '_id': 1,
+                'code_ocean_id': 1,}
+        updated_project = {**base_project, **project_params}
+        append_pipeline = [
+            {
+                '$match': match_params
+            },
+            # Project to include name and count of data_processes
+            {
+                '$project': updated_project
+            }]
+        agg_pipeline.extend(append_pipeline)
+
+
+    results = docdb_api_client.aggregate_docdb_records(pipeline=agg_pipeline)
+
+    results_df = pd.DataFrame(results)
+    results_df['derived_date'] = results_df['name'].str.split('_').str[-2]
+    results_df['raw_name'] = results_df['name'].apply(lambda x: x.lower().split(f'_{suffix.lower()}_')[0])
+
+    # remove one column called '_id'
+    results_df = results_df.drop(columns=['_id'], errors='ignore')
+    
+    results_df = results_df.rename(
+                    columns={'name': 'derived_name',
+                            'code_ocean_id': 'derived_asset_id'})
+
+    return results_df
