@@ -316,6 +316,8 @@ def get_derived_data_assets(mouse_id, suffix, parameters=None, docdb_api_client=
 
 
     results = docdb_api_client.aggregate_docdb_records(pipeline=agg_pipeline)
+    if len(results) == 0:
+        return None
 
     results_df = pd.DataFrame(results)
     results_df['derived_date'] = results_df['name'].str.split('_').str[-2]
