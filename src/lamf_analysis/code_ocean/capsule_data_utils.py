@@ -9,7 +9,8 @@ import h5py
 import time
 
 from codeocean import CodeOcean
-from codeocean.data_asset import DataAssetSearchParams
+from codeocean.data_asset import (DataAssetSearchParams,
+                                  DataAssetAttachParams)
 from codeocean.components import SearchFilter
 
 import aind_session
@@ -23,13 +24,15 @@ from lamf_analysis.code_ocean import capsule_bod_utils as cbu
 import lamf_analysis.utils as lamf_utils
 from lamf_analysis.code_ocean import docdb_utils
 
+import logging
+logger = logging.getLogger(__name__)
 
 DEFAULT_MOUNT_TO_IGNORE = ['fb4b5cef-4505-4145-b8bd-e41d6863d7a9', # Ophys_Extension_schema_10_14_2024_13_44
                             '35d1284e-4dfa-4ac3-9ba8-5ea1ae2fdaeb'], # ROI classifier V1
 TIME_FORMAT = '[0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
 DATE_FORMAT = '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
 
-def get_client():
+def get_co_client():
     domain="https://codeocean.allenneuraldynamics.org/"
     token = os.getenv('API_SECRET')
     client = CodeOcean(domain=domain, token=token)
@@ -42,7 +45,7 @@ def get_data_asset_search_results(query_str, mouse_id=None):
         query_str = f'conditioned_mean_response_v2' # works for data asset name beginning with this string
         results = get_data_asset_search_results(query_str, mouse_id)
     '''
-    client = get_client()
+    client = get_co_client()
     data_asset_params = DataAssetSearchParams(
         offset=0,
         limit=None,
@@ -91,7 +94,7 @@ def set_data_asset_params(mouse_id, data_name='multiplane-ophys', data_level='ra
 
 def get_mouse_sessions_by_filters(mouse_id, data_name='multiplane-ophys', data_level='raw',
                                   offset=0, limit=1000):
-    client = get_client()
+    client = get_co_client()
     data_asset_params = set_data_asset_params(mouse_id=mouse_id, data_name=data_name, data_level=data_level,
                                               offset=offset, limit=limit)
     results = []
@@ -241,6 +244,46 @@ def attach_mouse_data_assets(mouse_session_df, include_pupil=True):
     except:
         success = False
     return success
+
+
+def attach_assets(asset_ids:list, client=None):
+    """Attach list of asset_ids to capusle with CodeOcean SDK, print mount state
+    
+    Parameters
+    ----------
+    assets : list
+        list of asset_ids
+        Example: ['1az0c240-1a9z-192b-pa4c-22bac5ffa17b', '1az0c240-1a9z-192b-pa4c-22bac5ffa17b']
+    client : object
+        CodeOcean client object
+        If None, must set "API_SECRET" in environment variable for CodeOcean token
+        
+    Returns
+    -------
+    None
+    """
+    
+    if client is None:
+        client = get_co_client()
+
+    # DataAssetAttachParams(id="1az0c240-1a9z-192b-pa4c-22bac5ffa17b", mount="Reference")
+    data_assets = [DataAssetAttachParams(id=aid) for aid in asset_ids]        
+            
+    results = client.capsules.attach_data_assets(
+        capsule_id=os.getenv("CO_CAPSULE_ID"),
+        attach_params=data_assets,
+    )
+
+    for target_id in asset_ids:
+        result = next((item for item in results if item.id == target_id), None)
+
+        if result:
+            ms = result.mount_state
+            logger.info(f"asset_id: {target_id} - mount_state: {ms}")
+            print(f"asset_id: {target_id} - mount_state: {ms}")
+        else:
+            print(f"asset_id: {target_id} - not found in CodeOcean API response")
+    return
 
 
 def check_attached_data_assets(mouse_df_to_attach, 

@@ -15,12 +15,6 @@ def get_docdb_api_client():
         )
     return docdb_api_client
 
-
-def get_co_client():
-    domain = "https://codeocean.allenneuraldynamics.org/"
-    token = os.getenv("API_SECRET")
-    client = CodeOcean(domain=domain, token=token)
-    return client
     
 
 def get_session_infos_from_docdb(subject_id, docdb_api_client=None,
@@ -43,13 +37,15 @@ def get_session_infos_from_docdb(subject_id, docdb_api_client=None,
             session_type = response['session']['session_type']
             reward_consumed = response['session']['reward_consumed_total']
             rig_id = response['session']['rig_id']
-            data_asset_name = response['name']
+            data_asset_name = response['name']            
+            data_asset_id = response['external_links']['Code Ocean'][0]            
             temp_info = {"acquisition_date": acquisition_date,
                         "session_type": session_type,
                         "reward_consumed": reward_consumed,
                         "rig_id": rig_id,
                         "session_name": session_name,
                         "raw_asset_name": data_asset_name,
+                        "raw_asset_id": data_asset_id,
                         }
             session_infos = pd.concat([session_infos, pd.DataFrame(temp_info, index=[0])], ignore_index=True)
             # else:
