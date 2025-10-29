@@ -650,6 +650,42 @@ def load_decrosstalked_mean_image(session_key, plane_id,
     return mean_img
 
 
+def load_projection_image(plane_path, projection_type='mean'):
+    """
+    Find and load a decrosstalked projection image (mean or max) from the extraction HDF5 file for a given plane path.
+
+    Args:
+        plane_path (str or Path): Path to the plane directory containing the extraction HDF5 file.
+        projection_type (str, optional): Type of projection image to load. Must be either 'mean' or 'max'. Defaults to 'mean'.
+
+    Returns:
+        numpy.ndarray: The requested projection image as a NumPy array.
+
+    Raises:
+        AssertionError: If zero or more than one extraction HDF5 file is found in the plane path.
+        ValueError: If `projection_type` is not 'mean' or 'max'.
+        KeyError: If the requested projection image key is not found in the HDF5 file.
+        OSError: If the HDF5 file cannot be opened.
+
+    Example:
+        >>> img = load_projection_image('/path/to/plane', projection_type='max')
+        >>> print(img.shape)
+    """
+    # use glob
+    plane_path = Path(plane_path)
+    extraction_path = list(plane_path.rglob('*_extraction.h5'))
+    assert len(extraction_path) == 1, f"Expected exactly 1 extraction file, found {len(extraction_path)} in {plane_path}"
+    if projection_type == "mean":
+        key = "meanImg"
+    elif projection_type == "max":
+        key = "maxImg"
+    else:
+        raise ValueError(f"'projection_type' must be either 'mean' or 'max', instead got {projection_type}")
+    with h5py.File(extraction_path[0], 'r') as h:
+        img = h[key][:]
+    return img
+
+
 def get_roi_table_from_h5(session_key, plane_id,
                     data_dir = Path('/root/capsule/data')):
     ''' Load ROI table for a given session and plane ID
