@@ -1,8 +1,35 @@
 from dataclasses import dataclass, asdict
-from typing import Optional, Any, Dict, List, Union
+from typing import Optional, Any, Dict, List, Union, Tuple
 from pathlib import Path
 import json, os, uuid
 from datetime import datetime
+import boto3, botocore
+
+# s3 info
+# Need to set up AWS Assumable Role - aind-codeocean-user in the code (or similar)
+s3_bucket = "aind-scratch-data"
+s3_key = "ctl/temp_qc_log.json"
+s3 = boto3.client("s3")
+
+def check(bucket, key):
+    get_access = False
+    put_access = False
+    try:
+        s3.head_object(Bucket=bucket, Key=key)
+        print("GetObject OK")
+        get_access = True
+    except botocore.exceptions.ClientError as e:
+        print("GetObject fail:", e.response["Error"]["Code"])
+
+    try:
+        s3.put_object(Bucket=bucket, Key=key + ".write-test", Body=b"test")
+        print("PutObject OK")
+        put_access = True
+    except botocore.exceptions.ClientError as e:
+        print("PutObject fail:", e.response["Error"]["Code"])
+    return get_access and put_access
+assert check(s3_bucket, s3_key), "S3 access check failed"
+
 
 # Categories map
 _ALLOWED_CATEGORIES: Dict[tuple, set] = {
@@ -55,26 +82,37 @@ class AmendmentEntry:
     details: Optional[Dict[str, Any]] = None
 
 class QCStore:
-    _PATH = Path(__file__).resolve().parent / "qc_data" / "qc_data.json"
-
-    @classmethod
-    def _ensure(cls):
-        if not cls._PATH.parent.exists():
-            cls._PATH.parent.mkdir(parents=True, exist_ok=True)
-        if not cls._PATH.exists():
-            cls._atomic_save({"version": 1, "entries": []})
+    _S3_BUCKET = s3_bucket
+    _S3_KEY = s3_key
 
     @staticmethod
-    def _atomic_save(data: Dict[str, Any]) -> None:
-        tmp = QCStore._PATH.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data, indent=2))
-        tmp.replace(QCStore._PATH)
+    def _save_to_s3(data: Dict[str, Any]) -> None:
+        """
+        Overwrite the QC JSON object in S3.
+        """
+        s3.put_object(
+            Bucket=QCStore._S3_BUCKET,
+            Key=QCStore._S3_KEY,
+            Body=json.dumps(data, indent=2).encode("utf-8"),
+            ContentType="application/json",
+        )
 
     @classmethod
     def _load_raw(cls) -> Dict[str, Any]:
-        cls._ensure()
+        """
+        Load QC data JSON from S3, creating an empty structure if missing.
+        """
         try:
-            return json.loads(cls._PATH.read_text())
+            obj = s3.get_object(Bucket=cls._S3_BUCKET, Key=cls._S3_KEY)
+            body = obj["Body"].read()
+            if not body:
+                return {"version": 1, "entries": []}
+            return json.loads(body)
+        except botocore.exceptions.ClientError as e:
+            code = e.response.get("Error", {}).get("Code")
+            if code in ("NoSuchKey", "404"):
+                return {"version": 1, "entries": []}
+            raise
         except json.JSONDecodeError:
             return {"version": 1, "entries": []}
 
@@ -89,6 +127,75 @@ class QCStore:
                 continue
         return out
 
+    # -------- Redundancy / duplicate detection helpers --------
+    @classmethod
+    def find_redundant(
+        cls,
+        session_key: str,
+        qc_type: str,
+        level: str,
+        category: str,
+        plane_id: Optional[str] = None,
+        status: Optional[str] = None,
+        asset_name: Optional[str] = None,
+        asset_id: Optional[str] = None,
+    ) -> Optional[QCEntry]:
+        """
+        Return an existing QCEntry considered a duplicate of the prospective one,
+        or None if no duplicate exists.
+        Duplicate criteria:
+          - Same (session_key, qc_type, level, category)
+          - Same plane_id (for plane level; ignored for session level)
+          - Same asset_name (if provided for processing)
+          - Same asset_id if provided (strongest identifier)
+          - Same status (if provided)
+        """
+        qc_type = qc_type.lower()
+        level = level.lower()
+        category = category.lower()
+        status = status.lower() if status else None
+        for e in cls.qc_entries():
+            if (
+                e.session_key == session_key
+                and e.qc_type == qc_type
+                and e.level == level
+                and e.category == category
+            ):
+                if level == "plane" and e.plane_id != plane_id:
+                    continue
+                if asset_id and e.asset_id != asset_id:
+                    continue
+                if asset_name and e.asset_name != asset_name:
+                    continue
+                if status and e.status != status:
+                    continue
+                # If asset_id given and matches, treat as duplicate regardless of status filter absence
+                return e
+        return None
+
+    @classmethod
+    def is_redundant_entry(
+        cls,
+        session_key: str,
+        qc_type: str,
+        level: str,
+        category: str,
+        plane_id: Optional[str] = None,
+        status: Optional[str] = None,
+        asset_name: Optional[str] = None,
+        asset_id: Optional[str] = None,
+    ) -> bool:
+        return cls.find_redundant(
+            session_key=session_key,
+            qc_type=qc_type,
+            level=level,
+            category=category,
+            plane_id=plane_id,
+            status=status,
+            asset_name=asset_name,
+            asset_id=asset_id,
+        ) is not None
+
     @classmethod
     def log(
         cls,
@@ -102,6 +209,7 @@ class QCStore:
         status: str = "fail",
         asset_name: Optional[str] = None,
         asset_id: Optional[str] = None,
+        allow_duplicate: bool = False,
     ) -> QCEntry:
         qc_type = qc_type.lower()
         level = level.lower()
@@ -121,6 +229,21 @@ class QCStore:
         if qc_type == "processing" and asset_name is None:
             raise ValueError("asset_name required for processing QC entries")
 
+        # Duplicate check (before creating new entry)
+        existing = cls.find_redundant(
+            session_key=session_key,
+            qc_type=qc_type,
+            level=level,
+            category=category,
+            plane_id=plane_id,
+            status=status,
+            asset_name=asset_name,
+            asset_id=asset_id,
+        )
+        if existing and not allow_duplicate:
+            # Return existing instead of writing a new one
+            return existing
+
         entry = QCEntry(
             id=str(uuid.uuid4()),
             timestamp=datetime.utcnow().isoformat(timespec="seconds") + "Z",
@@ -137,7 +260,7 @@ class QCStore:
         )
         blob = cls._load_raw()
         blob.setdefault("entries", []).append(asdict(entry))
-        cls._atomic_save(blob)
+        cls._save_to_s3(blob)
         return entry
 
     @classmethod
@@ -172,7 +295,7 @@ class QCStore:
         )
         blob = cls._load_raw()
         blob.setdefault("entries", []).append(asdict(amend))
-        cls._atomic_save(blob)
+        cls._save_to_s3(blob)
         return amend
 
     @classmethod
