@@ -104,7 +104,7 @@ def process_json_files(source_asset_name: str,
     if process_level != 'subject':
         copy_core_json(source_asset_name)
 
-    processed_data_description_json_path = next(DATA_PATH.rglob('*processed*/data_description.json'))
+    processed_data_description_json_path = next(DATA_PATH.rglob('*processed*/data_description.json'), None)
     if not processed_data_description_json_path:
         processed_data_description_json = base_data_description_json(subject_id)
         print('No processed data description json found, using base data description json')
