@@ -59,10 +59,10 @@ DATA_PATH = Path('/root/capsule/data/')
 RESULTS_PATH = Path('/root/capsule/results/')
 
 def copy_core_json(source_asset_name):
-    session_json_path = next(DATA_PATH.rglob(f'*{source_asset_name}*/*session.json'))
-    procedures_json_path = next(DATA_PATH.rglob(f'{source_asset_name}*/*procedures.json'))
-    subject_json_path = next(DATA_PATH.rglob(f'*{source_asset_name}*/*subject.json'))
-    rig_json_path = next(DATA_PATH.rglob(f'*{source_asset_name}*/*rig.json'))
+    session_json_path = next(DATA_PATH.rglob(f'*{source_asset_name}*/*session.json'), None)
+    procedures_json_path = next(DATA_PATH.rglob(f'{source_asset_name}*/*procedures.json'), None)
+    subject_json_path = next(DATA_PATH.rglob(f'*{source_asset_name}*/*subject.json'), None)
+    rig_json_path = next(DATA_PATH.rglob(f'*{source_asset_name}*/*rig.json'), None)
 
     if not session_json_path:
         print('No session json found')
