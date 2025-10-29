@@ -656,7 +656,7 @@ def load_projection_image(plane_path, projection_type='mean'):
     # use glob
     plane_path = Path(plane_path)
     extraction_path = list(plane_path.rglob('*_extraction.h5'))
-    assert len(extraction_path) == 1
+    assert len(extraction_path) == 1, f"Expected exactly 1 extraction file, found {len(extraction_path)} in {plane_path}"
     if projection_type == "mean":
         key = "meanImg"
     elif projection_type == "max":
