@@ -81,7 +81,7 @@ def copy_core_json(source_asset_name):
 
     if not rig_json_path:
         print('No rig json found, trying instrument json')
-        instrument_json_path = next(DATA_PATH.rglob(f'*{source_asset_name}*/*instrument.json'))
+        instrument_json_path = next(DATA_PATH.rglob(f'*{source_asset_name}*/*instrument.json'), None)
         if not instrument_json_path:
             print('No instrument json found')
         else:
