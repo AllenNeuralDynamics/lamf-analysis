@@ -240,8 +240,12 @@ class QCStore:
             asset_name=asset_name,
             asset_id=asset_id,
         )
+        if existing is None:
+            print("[QCStore.log] No duplicate found for",
+                  session_key, qc_type, level, category, plane_id, status, asset_name, asset_id)
         if existing and not allow_duplicate:
             # Return existing instead of writing a new one
+            print("Duplicate QCEntry found; returning existing entry.")
             return existing
 
         entry = QCEntry(
