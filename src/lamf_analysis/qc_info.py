@@ -39,6 +39,7 @@ _ALLOWED_CATEGORIES: Dict[tuple, set] = {
         "bleaching",
     },
     ("acquisition", "session"): {
+        "imaging",
         "lick_detection",
         "reward_delivery",
         "running_wheel",
