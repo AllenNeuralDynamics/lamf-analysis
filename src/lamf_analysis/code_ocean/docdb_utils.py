@@ -1,7 +1,7 @@
 import os
 import pandas as pd
 from aind_data_access_api.document_db import MetadataDbClient
-import lamf_analysis.code_ocean.capsule_data_utils_utils as cdu
+import lamf_analysis.code_ocean.capsule_data_utils as cdu
 from codeocean import CodeOcean
 
 
