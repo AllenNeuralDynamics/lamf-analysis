@@ -189,12 +189,12 @@ def get_dlc_eye_data_info(mouse_id, docdb_api_client=None):
         {
             '$match': {
                 'name': {'$regex': 'dlc-eye', '$options': 'i'},
-                'processing.processing_pipeline.data_processes': {
-                    '$exists': True,
-                    '$elemMatch': {
-                        "code_url": "https://github.com/AllenNeuralDynamics/aind-capsule-eye-tracking",
-                    }
-                },
+                # 'processing.processing_pipeline.data_processes': {
+                #     '$exists': True,
+                #     '$elemMatch': {
+                #         "code_url": "https://github.com/AllenNeuralDynamics/aind-capsule-eye-tracking",
+                #     }
+                # },
                 'subject.subject_id': str(mouse_id),
             }
         },
