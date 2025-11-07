@@ -1,6 +1,7 @@
 import os
 import pandas as pd
 from aind_data_access_api.document_db import MetadataDbClient
+import lamf_analysis.code_ocean.codeocean_utils as cdu
 from codeocean import CodeOcean
 
 
@@ -38,7 +39,8 @@ def get_session_infos_from_docdb(subject_id, docdb_api_client=None,
             reward_consumed = response['session']['reward_consumed_total']
             rig_id = response['session']['rig_id']
             data_asset_name = response['name']            
-            data_asset_id = response['external_links']['Code Ocean'][0]            
+            data_asset_id = response['external_links']['Code Ocean'][0]
+            s3_path = response['location']
             temp_info = {"acquisition_date": acquisition_date,
                         "session_type": session_type,
                         "reward_consumed": reward_consumed,
@@ -46,6 +48,7 @@ def get_session_infos_from_docdb(subject_id, docdb_api_client=None,
                         "session_name": session_name,
                         "raw_asset_name": data_asset_name,
                         "raw_asset_id": data_asset_id,
+                        "s3_path": s3_path
                         }
             session_infos = pd.concat([session_infos, pd.DataFrame(temp_info, index=[0])], ignore_index=True)
             # else:
@@ -256,7 +259,7 @@ def filter_data_asset_info_by_long_window(data_asset_info, target_long_window):
 
 def check_exist_in_code_ocean(results_df, co_client=None):
     if co_client is None:
-        co_client = get_co_client()
+        co_client = cdu.get_co_client()
     for _, row in results_df.iterrows():
         data_asset_id = row['data_asset_id']
         data_asset_name = row['name']
