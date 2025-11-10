@@ -134,19 +134,23 @@ def get_derived_assets_df(subject_id, process_name,
             break
         data_asset_params.offset += data_asset_params.limit
     
-    derived_asset_df = pd.DataFrame()
+    derived_asset_rows = []
     for res in results:
         name = res.name
         raw_asset_name = name.split(process_name)[0].rstrip('_')
         session_name = '_'.join(raw_asset_name.split('_')[1:3])
-        assert str(subject_id) == session_name.split('_')[0], "Subject ID mismatch"
-        derived_asset_df = pd.concat([derived_asset_df,
-                                        pd.DataFrame({
-                                             'derived_asset_id': [res.id],
-                                             'derived_asset_name': [name],
-                                             'raw_asset_name': [raw_asset_name],
-                                             'session_name': [session_name],
-                                        })],
-                                          ignore_index=True)
+        if str(subject_id) != session_name.split('_')[0]:
+            raise ValueError(f"Subject ID mismatch: expected {subject_id}, found {session_name.split('_')[0]}")
+        derived_asset_rows.append({
+            'derived_asset_id': res.id,
+            'derived_asset_name': name,
+            'raw_asset_name': raw_asset_name,
+            'session_name': session_name,
+        })
+    derived_asset_df = pd.DataFrame(derived_asset_rows,
+                                    columns=['derived_asset_id',
+                                            'derived_asset_name',
+                                            'raw_asset_name',
+                                            'session_name'])
     return derived_asset_df
         
