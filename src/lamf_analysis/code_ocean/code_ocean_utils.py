@@ -105,7 +105,7 @@ def get_mouse_sessions_by_filters(mouse_id, data_name='multiplane-ophys', data_l
                                                   offset=offset, limit=limit)
         data_asset_search_results = client.data_assets.search_data_assets(data_asset_params)
         results.extend(data_asset_search_results.results)
-        if ~data_asset_search_results.has_more:
+        if not data_asset_search_results.has_more:
             break
         data_asset_params.offset += data_asset_params.limit
     
