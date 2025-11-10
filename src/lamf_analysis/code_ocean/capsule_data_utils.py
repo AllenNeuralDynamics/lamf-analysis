@@ -7,6 +7,7 @@ import glob
 from pathlib import Path
 import h5py
 import time
+import fnmatch
 
 from codeocean import CodeOcean
 from codeocean.data_asset import (DataAssetSearchParams,
@@ -22,7 +23,8 @@ from comb import file_handling
 
 from lamf_analysis.code_ocean import capsule_bod_utils as cbu
 import lamf_analysis.utils as lamf_utils
-from lamf_analysis.code_ocean import docdb_utils
+from lamf_analysis.code_ocean import (docdb_utils,
+                                      s3_utils)
 from lamf_analysis.code_ocean import code_ocean_utils as cou
 
 import logging
@@ -34,7 +36,7 @@ TIME_FORMAT = '[0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
 DATE_FORMAT = '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
 
 
-def get_mouse_session_df(mouse_id,
+def get_mouse_session_df(subject_id,
                          processed_date_after=None,
                          processed_date_before=None,
                          include_pupil=True):
@@ -47,11 +49,11 @@ def get_mouse_session_df(mouse_id,
         * capsule_id and commit_id can be used to filter (hopefully using look-up table)
     '''
     success = True
-    # mouse_sessions = aind_session.get_sessions(subject_id=mouse_id) # This errors out with "unauthorized issue"
+    # mouse_sessions = aind_session.get_sessions(subject_id=subject_id) # This errors out with "unauthorized issue"
     # Temporary fix while awaiting SciComp solution 2025/09/30 JK
-    mouse_sessions = cou.get_mouse_sessions_by_filters(mouse_id=mouse_id)
+    mouse_sessions = cou.get_mouse_sessions_by_filters(subject_id=subject_id)
     # to prevent errors (happens when adding faulty tags)
-    mouse_sessions = tuple([ms for ms in mouse_sessions if ms.subject_id == str(mouse_id)])
+    mouse_sessions = tuple([ms for ms in mouse_sessions if ms.subject_id == str(subject_id)])
 
     raw_data_date_list = []
     processed_data_date_list = []
@@ -140,6 +142,95 @@ def add_dff_long_baseline_window_to_mouse_df(mouse_df):
     dff_long_window_dict = {item['code_ocean_id']: item['long_window'] for item in dff_long_windows}
     mouse_df['dff_long_window'] = mouse_df['processed_data_asset_id'].map(dff_long_window_dict)
     return mouse_df
+
+
+def get_cortical_zstack_sessions(subject_id,
+                                 czstack_name_regex='*_cortical_z_stack*.tif*',
+                                 czstack_key='column_z_stack',
+                                 verbose=False):
+    ''' Get all cortical zstack sessions for a given subject_id (subject_id)
+    '''
+    session_infos = docdb_utils.get_session_infos_from_docdb(subject_id=subject_id)
+    def _find_keys(d, key_substr):
+        keys = []
+        for k, v in d.items():
+            if key_substr in k:
+                keys.append((k, v))
+            if isinstance(v, dict):
+                keys.extend(_find_keys(v, key_substr))
+            if isinstance(v, list):
+                for item in v:
+                    if isinstance(item, dict):
+                        keys.extend(_find_keys(item, key_substr))
+        return keys
+    
+    # check sessions with cortical z-stack from s3 file names
+    czstack_sessions = []
+    czstack_fn_list = []
+    num_error = 0
+    for session_info in session_infos.itertuples():
+        filepaths = s3_utils.list_files_from_s3_location(session_info.s3_path)
+        # find filepaths that match with czstack_name_regex (within s3 filepaths)
+ 
+        czstack_fn = fnmatch.filter(filepaths, czstack_name_regex)
+        assert len(czstack_fn) < 2, f"More than one czstack found in {session_info.raw_asset_name} with regex {czstack_name_regex}"
+        if len(czstack_fn) == 0:
+            if verbose:
+                print(f"No czstack with the input format {czstack_name_regex}")
+                print("Checking platform.json")
+ 
+            platform_json_s3_path = fnmatch.filter(filepaths, '*platform.json')
+            if len(platform_json_s3_path) != 1:
+                if verbose:
+                    print('='*40)
+                    print('                 ERROR')
+                    print('='*40)
+                    print(f"No platform.json found in {session_info.raw_asset_name}, skipping session.")
+                num_error += 1
+                continue
+            platform_json_s3_path = platform_json_s3_path[0]
+            platform_json = s3_utils.read_json_from_s3(platform_json_s3_path)
+            czstack_fn_tuple = _find_keys(platform_json, czstack_key)
+ 
+            if not czstack_fn_tuple:
+                if verbose:
+                    print(f"No column_z_stack found in {platform_json_s3_path}, skipping session.")
+                continue
+            if len(set(czstack_fn_tuple)) > 1:
+                if verbose:
+                    print('='*40)
+                    print('                 ERROR')
+                    print('='*40)
+                    print(f"Multiple column_z_stack keys found in {platform_json_s3_path}")
+                num_error += 1
+                continue
+            czstack_fn_candidate = czstack_fn_tuple[0][1]
+            czstack_fn = fnmatch.filter(filepaths, czstack_fn_candidate)
+            if len(czstack_fn) == 0:
+                if verbose:
+                    print('='*40)
+                    print('                 ERROR')
+                    print('='*40)
+                    print(f"column_z_stack file {czstack_fn_candidate} from platform.json not found in {session_info.raw_asset_name}, skipping session.")
+                num_error += 1
+                continue
+            elif len(czstack_fn) > 1:
+                if verbose:
+                    print('='*40)
+                    print('                 ERROR')
+                    print('='*40)
+                    print(f"Multiple files found for column_z_stack file {czstack_fn_candidate} from platform.json in {session_info.raw_asset_name}, skipping session.")
+                num_error += 1
+                continue
+        czstack_fn = czstack_fn[0].split('/')[-1]
+        czstack_fn_list.append(czstack_fn)
+        czstack_sessions.append(session_info)
+    if num_error > 0:
+        print(f"\nContinuing despite {num_error} errors so far.")
+    else:
+        print("\nNo errors found.")
+    czstack_sessions = pd.DataFrame(czstack_sessions)
+    return czstack_sessions, czstack_fn_list
         
 
 def attach_mouse_data_assets(mouse_session_df, include_pupil=True):
@@ -263,7 +354,7 @@ def attach_data_assets_with_repeats(mouse_df_to_attach, data_dir=Path('/root/cap
     return False
 
 
-def get_session_info(mouse_id, data_dir='/root/capsule/data'):
+def get_session_info(subject_id, data_dir='/root/capsule/data'):
     ''' Get all raw data paths in the data directory
     '''
     data_folders = [d for d in glob.glob(data_dir + '/*') if Path(d).is_dir()]
@@ -273,7 +364,7 @@ def get_session_info(mouse_id, data_dir='/root/capsule/data'):
                         ('stimuli' not in d.split('/')[-1]) and
                         ('stim-response' not in d.split('/')[-1]) and
                         ('ROICat' not in d.split('/')[-1]) and
-                        (str(mouse_id) in d.split('/')[-1]) and
+                        (str(subject_id) in d.split('/')[-1]) and
                         ('zstack' not in d.split('/')[-1])])
 
     session_names = [d.split('/')[-1] for d in raw_paths]
