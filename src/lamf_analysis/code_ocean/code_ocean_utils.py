@@ -140,7 +140,7 @@ def get_derived_assets_df(subject_id, process_name,
         raw_asset_name = name.split(process_name)[0].rstrip('_')
         session_name = '_'.join(raw_asset_name.split('_')[1:3])
         if str(subject_id) != session_name.split('_')[0]:
-            raise ValueError(f"Subject ID mismatch: expected {subject_id}, found {session_name.split('_')[0]}")
+            raise ValueError(f"Subject ID mismatch in asset '{name}': expected {subject_id}, found {session_name.split('_')[0]}")
         derived_asset_rows.append({
             'derived_asset_id': res.id,
             'derived_asset_name': name,
