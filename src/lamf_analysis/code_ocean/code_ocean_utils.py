@@ -39,11 +39,11 @@ def get_co_client():
     return client
 
 
-def get_data_asset_search_results(query_str, mouse_id=None):
+def get_data_asset_search_results(query_str, subject_id=None):
     ''' Get data asset search results from CodeOcean
     example: 
         query_str = f'conditioned_mean_response_v2' # works for data asset name beginning with this string
-        results = get_data_asset_search_results(query_str, mouse_id)
+        results = get_data_asset_search_results(query_str, subject_id)
     '''
     client = get_co_client()
     data_asset_params = DataAssetSearchParams(
@@ -57,19 +57,19 @@ def get_data_asset_search_results(query_str, mouse_id=None):
         query=query_str
     )
     data_assets = client.data_assets.search_data_assets(data_asset_params)
-    if mouse_id is not None:
-        results = [da for da in data_assets.results if f'{mouse_id}' in da.name]
+    if subject_id is not None:
+        results = [da for da in data_assets.results if f'{subject_id}' in da.name]
     else:
         results = data_assets.results
     return results
 
 
-def set_data_asset_params(mouse_id, data_name='multiplane-ophys', tags=['raw'],
+def set_data_asset_params(subject_id, data_name='multiplane-ophys', tags=['raw'],
                           offset=0, limit=1000):
     data_asset_filters = [        
         SearchFilter(
             key="tags",
-            value=str(mouse_id)
+            value=str(subject_id)
         ),
         SearchFilter(
             key="name",
@@ -94,14 +94,14 @@ def set_data_asset_params(mouse_id, data_name='multiplane-ophys', tags=['raw'],
     return data_asset_params
 
 
-def get_mouse_sessions_by_filters(mouse_id, data_name='multiplane-ophys', data_level='raw',
+def get_mouse_sessions_by_filters(subject_id, data_name='multiplane-ophys',
                                   offset=0, limit=1000):
     client = get_co_client()
 
     results = []
     while True:
-        data_asset_params = set_data_asset_params(mouse_id=mouse_id, 
-                                                  data_name=data_name, tags=[data_level],
+        data_asset_params = set_data_asset_params(subject_id=subject_id, 
+                                                  data_name=data_name, tags=['raw'],
                                                   offset=offset, limit=limit)
         data_asset_search_results = client.data_assets.search_data_assets(data_asset_params)
         results.extend(data_asset_search_results.results)
@@ -118,14 +118,14 @@ def get_mouse_sessions_by_filters(mouse_id, data_name='multiplane-ophys', data_l
     return sessions
 
 
-def get_derived_assets(mouse_id, process_name,
+def get_derived_assets_df(subject_id, process_name,
                        data_name='multiplane-ophys',
                        offset=0, limit=1000):
     client = get_co_client()
     tags = ['derived', process_name]
     results = []
     while True:
-        data_asset_params = set_data_asset_params(mouse_id=mouse_id, 
+        data_asset_params = set_data_asset_params(subject_id=subject_id, 
                                                   data_name=data_name, tags=tags,
                                                   offset=offset, limit=limit)
         data_asset_search_results = client.data_assets.search_data_assets(data_asset_params)
@@ -133,4 +133,24 @@ def get_derived_assets(mouse_id, process_name,
         if not data_asset_search_results.has_more:
             break
         data_asset_params.offset += data_asset_params.limit
-    return results
+    
+    derived_asset_rows = []
+    for res in results:
+        name = res.name
+        raw_asset_name = name.split(process_name)[0].rstrip('_')
+        session_name = '_'.join(raw_asset_name.split('_')[1:3])
+        if str(subject_id) != session_name.split('_')[0]:
+            raise ValueError(f"Subject ID mismatch in asset '{name}': expected {subject_id}, found {session_name.split('_')[0]}")
+        derived_asset_rows.append({
+            'derived_asset_id': res.id,
+            'derived_asset_name': name,
+            'raw_asset_name': raw_asset_name,
+            'session_name': session_name,
+        })
+    derived_asset_df = pd.DataFrame(derived_asset_rows,
+                                    columns=['derived_asset_id',
+                                            'derived_asset_name',
+                                            'raw_asset_name',
+                                            'session_name'])
+    return derived_asset_df
+        

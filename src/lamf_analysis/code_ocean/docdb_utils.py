@@ -122,7 +122,7 @@ def get_dff_long_baseline_window(processed_asset_ids, docdb_api_client=None):
     return results
 
 
-def get_processed_data_info(mouse_id, docdb_api_client=None):
+def get_processed_data_info(subject_id, docdb_api_client=None):
     if docdb_api_client is None:
         docdb_api_client = get_docdb_api_client()
     agg_pipeline = [
@@ -137,7 +137,7 @@ def get_processed_data_info(mouse_id, docdb_api_client=None):
                         "name": "dF/F estimation",
                     }
                 },
-                'subject.subject_id': str(mouse_id),
+                'subject.subject_id': str(subject_id),
             }
         },
         # Project to include name and count of data_processes
@@ -182,7 +182,7 @@ def get_processed_data_info(mouse_id, docdb_api_client=None):
     return results_df
 
 
-def get_dlc_eye_data_info(mouse_id, docdb_api_client=None):
+def get_dlc_eye_data_info(subject_id, docdb_api_client=None):
     if docdb_api_client is None:
         docdb_api_client = get_docdb_api_client()
     agg_pipeline = [
@@ -195,7 +195,7 @@ def get_dlc_eye_data_info(mouse_id, docdb_api_client=None):
                 #         "code_url": "https://github.com/AllenNeuralDynamics/aind-capsule-eye-tracking",
                 #     }
                 # },
-                'subject.subject_id': str(mouse_id),
+                'subject.subject_id': str(subject_id),
             }
         },
         # Project to include name and count of data_processes
@@ -269,7 +269,7 @@ def check_exist_in_code_ocean(results_df, co_client=None):
 
 
 # Getting derived assets (from analysis)
-def get_derived_data_assets(mouse_id, suffix, parameters=None, docdb_api_client=None):
+def get_derived_data_assets(subject_id, suffix, parameters=None, docdb_api_client=None):
     if docdb_api_client is None:
         docdb_api_client = get_docdb_api_client()
     
@@ -277,7 +277,7 @@ def get_derived_data_assets(mouse_id, suffix, parameters=None, docdb_api_client=
         {        
             '$match': {
                 'name': {'$regex': suffix, '$options': 'i'},
-                'subject.subject_id': str(mouse_id),
+                'subject.subject_id': str(subject_id),
             }
         },
         {
