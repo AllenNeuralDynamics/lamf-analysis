@@ -123,8 +123,6 @@ def get_derived_assets(mouse_id, process_name,
                        offset=0, limit=1000):
     client = get_co_client()
     tags = ['derived', process_name]
-    data_asset_params = set_data_asset_params(mouse_id=mouse_id, data_name=data_name, tags=tags,
-                                              offset=offset, limit=limit)
     results = []
     while True:
         data_asset_params = set_data_asset_params(mouse_id=mouse_id, 
@@ -132,7 +130,7 @@ def get_derived_assets(mouse_id, process_name,
                                                   offset=offset, limit=limit)
         data_asset_search_results = client.data_assets.search_data_assets(data_asset_params)
         results.extend(data_asset_search_results.results)
-        if ~data_asset_search_results.has_more:
+        if not data_asset_search_results.has_more:
             break
         data_asset_params.offset += data_asset_params.limit
     return results
