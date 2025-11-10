@@ -110,8 +110,8 @@ def get_mouse_sessions_by_filters(mouse_id, data_name='multiplane-ophys', data_l
         data_asset_params.offset += data_asset_params.limit
     
     sessions = set()
-    for restuls in results:
-        name = restuls.name
+    for result in results:
+        name = result.name
         session = Session(name)
         sessions.add(session)
     sessions = tuple(sorted(sessions, key=lambda s: s.dt))
