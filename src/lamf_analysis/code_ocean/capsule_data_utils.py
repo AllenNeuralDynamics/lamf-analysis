@@ -23,6 +23,7 @@ from comb import file_handling
 from lamf_analysis.code_ocean import capsule_bod_utils as cbu
 import lamf_analysis.utils as lamf_utils
 from lamf_analysis.code_ocean import docdb_utils
+from lamf_analysis.code_ocean import code_ocean_utils as cou
 
 import logging
 logger = logging.getLogger(__name__)
@@ -31,90 +32,6 @@ DEFAULT_MOUNT_TO_IGNORE = ['fb4b5cef-4505-4145-b8bd-e41d6863d7a9', # Ophys_Exten
                             '35d1284e-4dfa-4ac3-9ba8-5ea1ae2fdaeb'], # ROI classifier V1
 TIME_FORMAT = '[0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
 DATE_FORMAT = '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
-
-def get_co_client():
-    domain="https://codeocean.allenneuraldynamics.org/"
-    token = os.getenv('API_SECRET')
-    client = CodeOcean(domain=domain, token=token)
-    return client
-
-
-def get_data_asset_search_results(query_str, mouse_id=None):
-    ''' Get data asset search results from CodeOcean
-    example: 
-        query_str = f'conditioned_mean_response_v2' # works for data asset name beginning with this string
-        results = get_data_asset_search_results(query_str, mouse_id)
-    '''
-    client = get_co_client()
-    data_asset_params = DataAssetSearchParams(
-        offset=0,
-        limit=None,
-        sort_order="desc",
-        sort_field="name",
-        type="dataset",
-        archived=False,
-        favorite=False,
-        query=query_str
-    )
-    data_assets = client.data_assets.search_data_assets(data_asset_params)
-    if mouse_id is not None:
-        results = [da for da in data_assets.results if f'{mouse_id}' in da.name]
-    else:
-        results = data_assets.results
-    return results
-
-
-def set_data_asset_params(mouse_id, data_name='multiplane-ophys', data_level='raw',
-                          offset=0, limit=1000):
-    data_asset_params = DataAssetSearchParams(
-        offset=offset,
-        limit=limit,
-        sort_order="desc",
-        sort_field="name",
-        archived=False,
-        favorite=False,
-        # query="name:'multiplane-ophys'",
-        filters=[        
-            SearchFilter(
-                key="tags",
-                value=str(mouse_id)
-            ),
-            SearchFilter(
-                key="name",
-                value=data_name
-            ),
-            SearchFilter(
-                key="tags",
-                value=data_level
-            )
-        ]
-    )
-    return data_asset_params
-
-
-def get_mouse_sessions_by_filters(mouse_id, data_name='multiplane-ophys', data_level='raw',
-                                  offset=0, limit=1000):
-    client = get_co_client()
-    data_asset_params = set_data_asset_params(mouse_id=mouse_id, data_name=data_name, data_level=data_level,
-                                              offset=offset, limit=limit)
-    results = []
-    while True:
-        data_asset_params = set_data_asset_params(mouse_id=mouse_id, 
-                                                  data_name=data_name, data_level=data_level,
-                                                  offset=offset, limit=limit)
-        data_asset_search_results = client.data_assets.search_data_assets(data_asset_params)
-        results.extend(data_asset_search_results.results)
-        if ~data_asset_search_results.has_more:
-            break
-        data_asset_params.offset += data_asset_params.limit
-    
-    sessions = set()
-    for restuls in results:
-        name = restuls.name
-        session = Session(name)
-        sessions.add(session)
-    sessions = tuple(sorted(sessions, key=lambda s: s.dt))
-    return sessions
 
 
 def get_mouse_session_df(mouse_id,
@@ -132,7 +49,7 @@ def get_mouse_session_df(mouse_id,
     success = True
     # mouse_sessions = aind_session.get_sessions(subject_id=mouse_id) # This errors out with "unauthorized issue"
     # Temporary fix while awaiting SciComp solution 2025/09/30 JK
-    mouse_sessions = get_mouse_sessions_by_filters(mouse_id=mouse_id)
+    mouse_sessions = cou.get_mouse_sessions_by_filters(mouse_id=mouse_id)
     # to prevent errors (happens when adding faulty tags)
     mouse_sessions = tuple([ms for ms in mouse_sessions if ms.subject_id == str(mouse_id)])
 
@@ -264,7 +181,7 @@ def attach_assets(asset_ids:list, client=None):
     """
     
     if client is None:
-        client = get_co_client()
+        client = cou.get_co_client()
 
     # DataAssetAttachParams(id="1az0c240-1a9z-192b-pa4c-22bac5ffa17b", mount="Reference")
     data_assets = [DataAssetAttachParams(id=aid) for aid in asset_ids]        
