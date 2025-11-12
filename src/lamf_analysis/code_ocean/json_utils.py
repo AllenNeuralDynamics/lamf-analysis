@@ -155,7 +155,7 @@ def get_data_description_dict(capture_name, source_asset_name, processed_data_de
     data_description_dict["creation_time"] = datetime.datetime.now()
     data_description_dict["name"] = capture_name
     data_description_dict["data_level"] = DataLevel.DERIVED
-    data_description_dict["input_data_name"] = source_asset_name
+    # data_description_dict["input_data_name"] = source_asset_name
     
     return data_description_dict
 
