@@ -105,16 +105,12 @@ def process_json_files(source_asset_name: str, # data asset name of the source
     if process_level != 'subject':
         copy_core_json(source_asset_name)
 
-    source_path = next(DATA_PATH.rglob(f'*{source_asset_name}*'), None)
-    if source_path:
-        processed_data_description_json_path = next(source_path.rglob('data_description.json'), None)
+    data_description_json_path = next(DATA_PATH.rglob(f'*{source_asset_name}*/data_description.json'), None)
+    if data_description_json_path is None:
+        print('No data_description.json found in source asset, creating base data description json')
+        processed_data_description_json = base_data_description_json(subject_id)        
     else:
-        processed_data_description_json_path = None
-    if not processed_data_description_json_path:
-        processed_data_description_json = base_data_description_json(subject_id)
-        print('No processed data description json found, using base data description json')
-    else:
-        with processed_data_description_json_path.open('r') as f:
+        with data_description_json_path.open('r') as f:
             processed_data_description_json = json.load(f)
     
     end_date_time = datetime.datetime.now()
