@@ -153,4 +153,21 @@ def get_derived_assets_df(subject_id, process_name,
                                             'raw_asset_name',
                                             'session_name'])
     return derived_asset_df
-        
+
+
+def get_derived_assets(subject_id, process_name,
+                       data_name='multiplane-ophys',
+                       offset=0, limit=1000):
+    client = get_co_client()
+    tags = ['derived', process_name]
+    results = []
+    while True:
+        data_asset_params = set_data_asset_params(subject_id=subject_id, 
+                                                  data_name=data_name, tags=tags,
+                                                  offset=offset, limit=limit)
+        data_asset_search_results = client.data_assets.search_data_assets(data_asset_params)
+        results.extend(data_asset_search_results.results)
+        if not data_asset_search_results.has_more:
+            break
+        data_asset_params.offset += data_asset_params.limit
+    return results
