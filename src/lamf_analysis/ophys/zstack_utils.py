@@ -160,13 +160,13 @@ def get_xy_size_um(sizeXY, tol=0.005):
         return 700
 
 
-def get_cortical_zstack_reg_df(mouse_ids):
+def get_cortical_zstack_reg_df(subject_ids):
     """
     Build a dataframe aggregating cortical z-stack registration derived assets
     and computed spatial resolution metrics.
 
     Parameters:
-        mouse_ids (int | str | list[int | str]): One or more mouse identifiers.
+        subject_ids (int | str | list[int | str]): One or more subject identifiers.
 
     Returns:
         pandas.DataFrame: DataFrame with columns:
@@ -176,12 +176,12 @@ def get_cortical_zstack_reg_df(mouse_ids):
     Notes:
         xy_resolution is computed as xy_size_um / xy_size_pix.
     """
-    if isinstance(mouse_ids, str) or isinstance(mouse_ids, int):
-        mouse_ids = [mouse_ids]
+    if isinstance(subject_ids, str) or isinstance(subject_ids, int):
+        subject_ids = [subject_ids]
 
     czstack_reg_results_df = pd.DataFrame()
-    for mouse_id in mouse_ids:
-        derived_assets_df = cou.get_derived_assets_df(mouse_id, 'cortical-zstack-registration')
+    for subject_id in subject_ids:
+        derived_assets_df = cou.get_derived_assets_df(subject_id, 'cortical-zstack-registration')
         czstack_reg_results_df = pd.concat([czstack_reg_results_df, derived_assets_df], ignore_index=True)
     czstack_reg_results_df['xy_info'] = czstack_reg_results_df['s3_path'].apply(find_stack_xy_info)
     czstack_reg_results_df['z_info'] = czstack_reg_results_df['s3_path'].apply(find_stack_z_info)
