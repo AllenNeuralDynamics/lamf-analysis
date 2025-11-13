@@ -180,6 +180,7 @@ def get_cortical_zstack_reg_df(subject_ids):
     """
     if isinstance(subject_ids, str) or isinstance(subject_ids, int):
         subject_ids = [subject_ids]
+    assert isinstance(subject_ids, list), "type(subject_ids) must be list, str, or int"
 
     czstack_reg_results_df = pd.DataFrame()
     for subject_id in subject_ids:
