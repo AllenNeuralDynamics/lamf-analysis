@@ -158,6 +158,8 @@ def get_xy_size_um(sizeXY, tol=0.005):
         return 400
     elif abs(sizeXY - 4.458599) < tol:
         return 700
+    else:
+        raise ValueError(f"Unrecognized sizeXY calibration value: {sizeXY}")
 
 
 def get_cortical_zstack_reg_df(subject_ids):
