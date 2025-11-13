@@ -1,7 +1,10 @@
 # aind-data-schema==1.2.0
 import aind_data_schema
-assert(aind_data_schema.__version__ == '1.2.0')
+assert aind_data_schema.__version__ == '1.2.0'
+
 # pylint: disable=pointless-string-statement
+# pylint: disable=wrong-import-position
+# pylint: disable=wrong-import-order
 
 ''' Example (in run_capsule.py)
 
@@ -43,18 +46,17 @@ import json
 from aind_data_schema.core.data_description import (
     DataDescription,
     DerivedDataDescription,
-)
-from aind_data_schema.core.processing import DataProcess, Processing, PipelineProcess
-
-from aind_data_schema.core.data_description import (
+    DataLevel,
     Organization,
     Modality,
     Platform,
     Funding,
 )
+from aind_data_schema.core.processing import (
+    DataProcess,
+    Processing,
+    PipelineProcess)
 from aind_data_schema_models.pid_names import PIDName
-
-from aind_data_schema.core.data_description import DataLevel
 
 DATA_PATH = Path('/root/capsule/data/')
 RESULTS_PATH = Path('/root/capsule/results/')

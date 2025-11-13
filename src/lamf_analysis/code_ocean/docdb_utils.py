@@ -259,7 +259,7 @@ def filter_data_asset_info_by_long_window(data_asset_info, target_long_window):
 
 def check_exist_in_code_ocean(results_df, co_client=None):
     if co_client is None:
-        co_client = cdu.get_co_client()
+        co_client = cou.get_co_client()
     for _, row in results_df.iterrows():
         data_asset_id = row['data_asset_id']
         data_asset_name = row['name']
