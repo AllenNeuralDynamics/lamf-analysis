@@ -15,10 +15,6 @@ from codeocean.components import SearchFilter
 
 import aind_session
 from aind_session import Session
-from aind_ophys_data_access import capsule
-from comb.behavior_ophys_dataset import BehaviorOphysDataset, BehaviorMultiplaneOphysDataset
-from aind_ophys_data_access import rois
-from comb import file_handling
 
 from lamf_analysis.code_ocean import capsule_bod_utils as cbu
 import lamf_analysis.utils as lamf_utils
@@ -166,3 +162,43 @@ def get_derived_assets(subject_id, process_name,
             break
         data_asset_params.offset += data_asset_params.limit
     return results
+
+
+def attach_assets(assets: list, co_client=None):
+    """Attach list of asset_ids to capsule with CodeOcean SDK, print mount state
+    
+    Parameters
+    ----------
+    assets : list
+        list of asset_ids
+        Example: ['1az0c240-1a9z-192b-pa4c-22bac5ffa17b', '1az0c240-1a9z-192b-pa4c-22bac5ffa17b']
+    co_client : object
+        CodeOcean client object
+        If None, must set "API_SECRET" in environment variable for CodeOcean token
+        
+    Returns
+    -------
+    None
+    """
+    
+    if co_client is None:
+        co_client = get_co_client()
+
+    # DataAssetAttachParams(id="1az0c240-1a9z-192b-pa4c-22bac5ffa17b", mount="Reference")
+    data_assets = [DataAssetAttachParams(id=aid) for aid in assets]        
+            
+    results = co_client.capsules.attach_data_assets(
+        capsule_id=os.getenv("CO_CAPSULE_ID"),
+        attach_params=data_assets,
+    )
+
+    for target_id in assets:
+        result = next((item for item in results if item.id == target_id), None)
+
+        if result:
+            ms = result.mount_state
+            logger.info(f"asset_id: {target_id} - mount_state: {ms}")
+            print(f"asset_id: {target_id} - mount_state: {ms}")
+        else:
+            print(f"asset_id: {target_id} - not found in CodeOcean API response")
+    return
