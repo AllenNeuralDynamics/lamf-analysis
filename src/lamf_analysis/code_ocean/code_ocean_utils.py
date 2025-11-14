@@ -164,7 +164,7 @@ def get_derived_assets(subject_id, process_name,
     return results
 
 
-def attach_assets(assets:list, co_client=None):
+def attach_assets(assets: list, co_client=None):
     """Attach list of asset_ids to capsule with CodeOcean SDK, print mount state
     
     Parameters
