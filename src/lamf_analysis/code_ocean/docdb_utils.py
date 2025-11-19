@@ -2,6 +2,7 @@ import os
 import pandas as pd
 from aind_data_access_api.document_db import MetadataDbClient
 import lamf_analysis.code_ocean.capsule_data_utils as cdu
+import lamf_analysis.code_ocean.code_ocean_utils as cou
 from codeocean import CodeOcean
 
 
@@ -301,7 +302,8 @@ def get_derived_data_assets(subject_id, suffix, parameters=None, docdb_api_clien
         project_params = {f"{k}": f"$process.parameters.{k}" for k in parameters.keys()}
         base_project = {'name': 1,
                 '_id': 1,
-                'code_ocean_id': 1,}
+                'code_ocean_id': 1,
+                }
         updated_project = {**base_project, **project_params}
         append_pipeline = [
             {
