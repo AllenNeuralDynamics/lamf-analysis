@@ -452,9 +452,13 @@ class QCStore:
         session_type_list = []
         session_type_exposures_list = []
         for session_key in session_keys:
-            session_info = docdb_utils.get_session_info_for_session_key(session_key)
-            session_type_list.append(session_info['session_type'])
-            session_type_exposures_list.append(session_info['session_type_exposures'])
+            try:
+                session_info = docdb_utils.get_session_info_for_session_key(session_key)
+                session_type_list.append(session_info.get('session_type', None))
+                session_type_exposures_list.append(session_info.get('session_type_exposures', None))
+            except Exception:
+                session_type_list.append(None)
+                session_type_exposures_list.append(None)
         df["session_type"] = session_type_list
         df["session_type_exposures"] = session_type_exposures_list
         return df
