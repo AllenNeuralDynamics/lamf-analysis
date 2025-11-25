@@ -20,7 +20,12 @@ def get_docdb_api_client():
 
 def get_session_info_for_session_key(session_key, docdb_api_client=None,
                                  data_type='multiplane-ophys'):
-    subject_id = session_key.split('_')[0]
+    # Validate session_key format: must be 'subjectid_date' (exactly one underscore)
+    if not isinstance(session_key, str) or session_key.count('_') != 1:
+        raise ValueError(f"session_key '{session_key}' is not in the expected format 'subjectid_date'")
+    subject_id, date_part = session_key.split('_')
+    if not subject_id or not date_part:
+        raise ValueError(f"session_key '{session_key}' must have non-empty subjectid and date parts")
     session_infos = get_session_infos_from_docdb(subject_id, docdb_api_client,
                                                 data_type=data_type,
                                                 filter_test_data=False)
