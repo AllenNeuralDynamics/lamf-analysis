@@ -17,7 +17,17 @@ def get_docdb_api_client():
         )
     return docdb_api_client
 
-    
+
+def get_session_info_for_session_key(session_key, docdb_api_client=None,
+                                 data_type='multiplane-ophys'):
+    subject_id = session_key.split('_')[0]
+    session_infos = get_session_infos_from_docdb(subject_id, docdb_api_client,
+                                                data_type=data_type,
+                                                filter_test_data=False)
+    session_info = session_infos.query('session_name == @session_key')
+    assert len(session_info) == 1, f"Session {session_key} not found or multiple found."
+    return session_info.iloc[0].to_dict()
+
 
 def get_session_infos_from_docdb(subject_id, docdb_api_client=None,
                                  data_type='multiplane-ophys',

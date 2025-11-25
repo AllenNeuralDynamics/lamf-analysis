@@ -4,6 +4,7 @@ from pathlib import Path
 import json, os, uuid
 from datetime import datetime
 import boto3, botocore
+from lamf_analysis.code_ocean import docdb_utils
 
 # s3 info
 # Need to set up AWS Assumable Role - aind-codeocean-user in the code (or similar)
@@ -127,6 +128,17 @@ class QCStore:
             except TypeError:
                 continue
         return out
+    
+    @classmethod
+    def remove(cls, id: str) -> bool:
+        blob = cls._load_raw()
+        entries = blob.get("entries", [])
+        new_entries = [entry for entry in entries if entry.get("id") != id]
+        if len(entries) == len(new_entries):
+            return False  # No entry was removed
+        blob["entries"] = new_entries
+        cls._save_to_s3(blob)
+        return True  # Entry was removed
 
     # -------- Redundancy / duplicate detection helpers --------
     @classmethod
@@ -410,6 +422,7 @@ class QCStore:
         cls,
         apply_amendments: bool = False,
         exclude_reverted: bool = False,
+        add_session_info: bool = False,
     ):
         try:
             import pandas as pd
@@ -426,7 +439,41 @@ class QCStore:
             rows.append(row)
         cols = ["id","timestamp","session_key","qc_type","level","category",
                 "plane_id","status","message","details","asset_name","asset_id"]
+        if add_session_info:
+            return cls._add_session_info(pd.DataFrame(rows, columns=cols))
         return pd.DataFrame(rows, columns=cols)
+    
+    @classmethod
+    def _add_session_info(cls, df):
+        """
+        Enrich the QC dataframe with session metadata from DocDB.
+        """
+        session_keys = df["session_key"].values
+        session_type_list = []
+        session_type_exposures_list = []
+        for session_key in session_keys:
+            session_info = docdb_utils.get_session_info_for_session_key(session_key)
+            session_type_list.append(session_info['session_type'])
+            session_type_exposures_list.append(session_info['session_type_exposures'])
+        df["session_type"] = session_type_list
+        df["session_type_exposures"] = session_type_exposures_list
+        return df
+    
+    @classmethod
+    def backup(cls, local_path: Union[str, Path], include_timestamp: bool = True) -> Path:
+        """
+        Save a backup of the current QC data to a JSON file.
+        If local_path is a directory, create a (timestamp)_qc_backup.json file inside it.
+        Timestamp format: YYYY-MM-DD_HH-MM-SS (e.g. 2025-11-15_13-01-02).
+        Returns the Path to the written file.
+        """
+        blob = cls._load_raw()
+        path = Path(local_path)
+        if path.is_dir():
+            stamp = datetime.utcnow().strftime("%Y-%m-%d_%H-%M-%S") if include_timestamp else "qc_backup"
+            path = path / f"{stamp}_qc-backup.json"
+        path.write_text(json.dumps(blob, indent=2))
+        return path
 
 # Example:
 # original = QCStore.log(session_key="sess1", qc_type="processing", level="plane",
