@@ -17,7 +17,25 @@ def get_docdb_api_client():
         )
     return docdb_api_client
 
-    
+
+def get_session_info_for_session_key(session_key, docdb_api_client=None,
+                                 data_type='multiplane-ophys'):
+    # Validate session_key format: must be 'subjectid_date' (exactly one underscore)
+    if not isinstance(session_key, str) or session_key.count('_') != 1:
+        raise ValueError(f"session_key '{session_key}' is not in the expected format 'subjectid_date'")
+    subject_id, date_part = session_key.split('_')
+    if not subject_id or not date_part:
+        raise ValueError(f"session_key '{session_key}' must have non-empty subjectid and date parts")
+    session_infos = get_session_infos_from_docdb(subject_id, docdb_api_client,
+                                                data_type=data_type,
+                                                filter_test_data=False)
+    session_info = session_infos.query('session_name == @session_key')
+    if len(session_info) == 0:
+        raise AssertionError(f"Session {session_key} not found in DocDB.")
+    if len(session_info) > 1:
+        raise AssertionError(f"Multiple sessions found for {session_key}.")
+    return session_info.iloc[0].to_dict()
+
 
 def get_session_infos_from_docdb(subject_id, docdb_api_client=None,
                                  data_type='multiplane-ophys',
