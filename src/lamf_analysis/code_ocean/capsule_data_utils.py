@@ -16,9 +16,7 @@ from codeocean.components import SearchFilter
 
 import aind_session
 from aind_session import Session
-from aind_ophys_data_access import capsule
 from comb.behavior_ophys_dataset import BehaviorOphysDataset, BehaviorMultiplaneOphysDataset
-from aind_ophys_data_access import rois
 from comb import file_handling
 
 from lamf_analysis.code_ocean import capsule_bod_utils as cbu
@@ -233,11 +231,14 @@ def get_cortical_zstack_sessions(subject_id,
     return czstack_sessions, czstack_fn_list
         
 
-def attach_mouse_data_assets(mouse_session_df, include_pupil=True):
+def attach_mouse_data_assets(mouse_session_df, include_pupil=True,
+                             co_client=None):
     ''' Attach mouse data assets to mouse session dataframe.
     Built to use the results from get_mouse_session_df.
     Returns if successful.
     '''
+    if co_client is None:
+        co_client = cou.get_co_client()
     assert np.all([isinstance(raw_id, str) for raw_id in mouse_session_df.raw_data_asset_id.values]), \
         'raw data asset ids must be str'
     if include_pupil:
@@ -245,53 +246,13 @@ def attach_mouse_data_assets(mouse_session_df, include_pupil=True):
         f'"include_pupil" set to {include_pupil}, so must provide appropriate pupil data asset ids'
     success = True
     try:
-        capsule.attach_assets(mouse_session_df.raw_data_asset_id.values)
-        capsule.attach_assets(mouse_session_df.processed_data_asset_id.values)
+        cou.attach_assets(mouse_session_df.raw_data_asset_id.values, co_client=co_client)
+        cou.attach_assets(mouse_session_df.processed_data_asset_id.values, co_client=co_client)
         if include_pupil:
-            capsule.attach_assets(mouse_session_df.pupil_data_asset_id.values)
+            cou.attach_assets(mouse_session_df.pupil_data_asset_id.values, co_client=co_client)
     except:
         success = False
     return success
-
-
-def attach_assets(asset_ids:list, client=None):
-    """Attach list of asset_ids to capusle with CodeOcean SDK, print mount state
-    
-    Parameters
-    ----------
-    assets : list
-        list of asset_ids
-        Example: ['1az0c240-1a9z-192b-pa4c-22bac5ffa17b', '1az0c240-1a9z-192b-pa4c-22bac5ffa17b']
-    client : object
-        CodeOcean client object
-        If None, must set "API_SECRET" in environment variable for CodeOcean token
-        
-    Returns
-    -------
-    None
-    """
-    
-    if client is None:
-        client = cou.get_co_client()
-
-    # DataAssetAttachParams(id="1az0c240-1a9z-192b-pa4c-22bac5ffa17b", mount="Reference")
-    data_assets = [DataAssetAttachParams(id=aid) for aid in asset_ids]        
-            
-    results = client.capsules.attach_data_assets(
-        capsule_id=os.getenv("CO_CAPSULE_ID"),
-        attach_params=data_assets,
-    )
-
-    for target_id in asset_ids:
-        result = next((item for item in results if item.id == target_id), None)
-
-        if result:
-            ms = result.mount_state
-            logger.info(f"asset_id: {target_id} - mount_state: {ms}")
-            print(f"asset_id: {target_id} - mount_state: {ms}")
-        else:
-            print(f"asset_id: {target_id} - not found in CodeOcean API response")
-    return
 
 
 def check_attached_data_assets(mouse_df_to_attach, 
@@ -731,7 +692,7 @@ def get_roi_table_from_plane_path(plane_path, apply_filter=True, small_roi_radiu
         raise ValueError(f'No extraction file found for {plane_id}')
     pixel_masks = file_handling.load_sparse_array(extraction_fn)
             
-    roi_table = rois.roi_table_from_mask_arrays(pixel_masks)
+    roi_table = roi_table_from_mask_arrays(pixel_masks)
     roi_table = roi_table.rename(columns={'id': 'cell_roi_id'})
 
     if apply_filter:
@@ -760,6 +721,53 @@ def get_roi_table_from_plane_path(plane_path, apply_filter=True, small_roi_radiu
         
         roi_table['small_roi'] = roi_table['mask_matrix'].apply(lambda x: len(np.where(x)[0]) < area_threshold)
         roi_table['valid_roi'] = ~roi_table['touching_motion_border'] & ~roi_table['small_roi']
+
+    return roi_table
+
+
+def roi_table_from_mask_arrays(pixel_masks: np.ndarray,
+                               index_name: str = 'id'):
+    columns = ['mask_matrix',
+                'height',
+                'width',
+                'x',
+                'y',
+                'centroid',
+                'bounding_box',
+                'valid_roi',
+                'exclusion_labels']
+
+    roi_table = pd.DataFrame(index=range(pixel_masks.shape[0]), columns=columns)
+    for i in range(pixel_masks.shape[0]):
+        roi_mask = pixel_masks[i]
+        roi_table.loc[i, 'mask_matrix'] = roi_mask
+    
+        # find a bounding box around roi
+        non_zero_coords = np.array(np.where(roi_mask > 0))  # Shape (2, N) where N = number of non-zero points
+
+        # Get the bounds of the bounding box
+        min_row, min_col = non_zero_coords.min(axis=1)
+        max_row, max_col = non_zero_coords.max(axis=1)
+
+        # Bounding box coordinates
+        bounding_box = (min_row, min_col, max_row, max_col)
+        height = max_row - min_row
+        width = max_col - min_col
+
+        roi_table.loc[i, 'bounding_box'] = [bounding_box]
+        roi_table.loc[i, 'height'] = height
+        roi_table.loc[i, 'width'] = width
+        roi_table.loc[i, 'x'] = min_col
+        roi_table.loc[i, 'y'] = min_row
+        roi_table.loc[i, 'centroid'] = (min_col + width / 2, min_row + height / 2)
+        
+        # legacy attributes
+        roi_table.loc[i, 'valid_roi'] = True
+        roi_table.loc[i, 'exclusion_labels'] = None
+
+    # reset and rename col
+    roi_table.index.name = index_name
+    roi_table = roi_table.reset_index(drop=False)
 
     return roi_table
 
