@@ -15,9 +15,7 @@ from codeocean.components import SearchFilter
 
 import aind_session
 from aind_session import Session
-from aind_ophys_data_access import capsule
 from comb.behavior_ophys_dataset import BehaviorOphysDataset, BehaviorMultiplaneOphysDataset
-from aind_ophys_data_access import rois
 from comb import file_handling
 
 from lamf_analysis.code_ocean import capsule_bod_utils as cbu
@@ -31,6 +29,7 @@ DEFAULT_MOUNT_TO_IGNORE = ['fb4b5cef-4505-4145-b8bd-e41d6863d7a9', # Ophys_Exten
                             '35d1284e-4dfa-4ac3-9ba8-5ea1ae2fdaeb'], # ROI classifier V1
 TIME_FORMAT = '[0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
 DATE_FORMAT = '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+
 
 def get_co_client():
     domain="https://codeocean.allenneuraldynamics.org/"
@@ -166,3 +165,37 @@ def get_derived_assets(subject_id, process_name,
             break
         data_asset_params.offset += data_asset_params.limit
     return results
+
+
+def get_hcr_processed_data_assets(subject_id,
+                                  co_client=None):
+    if co_client is None:
+        co_client = get_co_client()
+
+    data_asset_filters = [
+        SearchFilter(
+            key="tags",
+            value="HCR"
+        ),
+        SearchFilter(
+            key="tags",
+            value="processed"
+        ),
+        SearchFilter(
+            key="name",
+            value=f"HCR_{subject_id}"
+        ),
+    ]
+    data_asset_params = DataAssetSearchParams(
+            offset=0,
+            limit=1000,
+            sort_order="desc",
+            sort_field="name",
+            archived=False,
+            favorite=False,
+            # query="name:'multiplane-ophys'",
+            filters=data_asset_filters
+        )
+
+    search_results = co_client.data_assets.search_data_assets(data_asset_params)
+    return search_results
