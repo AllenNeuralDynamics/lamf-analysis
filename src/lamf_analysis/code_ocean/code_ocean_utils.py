@@ -169,6 +169,21 @@ def get_derived_assets(subject_id, process_name,
 
 def get_hcr_processed_data_assets(subject_id,
                                   co_client=None):
+    """
+    Retrieve HCR processed data assets for a given subject from CodeOcean.
+
+    Parameters
+    ----------
+    subject_id : str
+        The identifier of the subject for which to retrieve HCR data assets.
+    co_client : CodeOcean, optional
+        An instance of the CodeOcean client. If None, a new client will be created.
+
+    Returns
+    -------
+    search_results : DataAssetSearchResults
+        The search results object containing the matching HCR processed data assets.
+    """
     if co_client is None:
         co_client = get_co_client()
 
