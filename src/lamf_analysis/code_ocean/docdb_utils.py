@@ -64,7 +64,7 @@ def get_session_infos_from_docdb(subject_id, docdb_api_client=None,
                         "session_type": session_type,
                         "reward_consumed": reward_consumed,
                         "rig_id": rig_id,
-                        "session_name": session_name,
+                        "session_key": session_name,
                         "raw_asset_name": data_asset_name,
                         "raw_asset_id": data_asset_id,
                         "s3_path": s3_path
