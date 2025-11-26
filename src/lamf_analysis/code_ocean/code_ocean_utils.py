@@ -28,6 +28,7 @@ DEFAULT_MOUNT_TO_IGNORE = ['fb4b5cef-4505-4145-b8bd-e41d6863d7a9', # Ophys_Exten
 TIME_FORMAT = '[0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
 DATE_FORMAT = '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
 
+
 def get_co_client():
     domain="https://codeocean.allenneuraldynamics.org/"
     token = os.getenv('API_SECRET')
@@ -164,7 +165,56 @@ def get_derived_assets(subject_id, process_name,
     return results
 
 
-def attach_assets(assets: list, co_client=None):
+def get_hcr_processed_data_assets(subject_id,
+                                  co_client=None):
+    """
+    Retrieve HCR processed data assets for a given subject from CodeOcean.
+
+    Parameters
+    ----------
+    subject_id : str
+        The identifier of the subject for which to retrieve HCR data assets.
+    co_client : CodeOcean, optional
+        An instance of the CodeOcean client. If None, a new client will be created.
+
+    Returns
+    -------
+    search_results : DataAssetSearchResults
+        The search results object containing the matching HCR processed data assets.
+    """
+    if co_client is None:
+        co_client = get_co_client()
+
+    data_asset_filters = [
+        SearchFilter(
+            key="tags",
+            value="HCR"
+        ),
+        SearchFilter(
+            key="tags",
+            value="processed"
+        ),
+        SearchFilter(
+            key="name",
+            value=f"HCR_{subject_id}"
+        ),
+    ]
+    data_asset_params = DataAssetSearchParams(
+            offset=0,
+            limit=1000,
+            sort_order="desc",
+            sort_field="name",
+            archived=False,
+            favorite=False,
+            # query="name:'multiplane-ophys'",
+            filters=data_asset_filters
+        )
+
+    search_results = co_client.data_assets.search_data_assets(data_asset_params)
+    return search_results
+  
+
+  def attach_assets(assets: list, co_client=None):
     """Attach list of asset_ids to capsule with CodeOcean SDK, print mount state
     
     Parameters
