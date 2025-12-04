@@ -449,8 +449,6 @@ def plot_contour_and_projections(roi_df, img, mask_key="mask_matrix",
 
     for roi_id, row in roi_df.iterrows():
 
-        x = row['x']
-        y = row['y']
         mask = np.array(row[mask_key]>0)
         pad = 5
         mask = np.pad(mask, pad, mode='constant', constant_values=0) # pad mask so contour works on edge
