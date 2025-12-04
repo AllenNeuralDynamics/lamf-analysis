@@ -555,13 +555,13 @@ def get_plane_path_from_session_key_and_plane_id(session_key, plane_id,
     return plane_path
 
 
-def load_dff(session_key, plane_id,
-             data_dir=Path('/root/capsule/data')):
-    ''' Load dff for a given session and plane ID
+def load_dff_from_plane_path(plane_path):
+    ''' Load dff for a given plane path
     It can be retrieved from extraction folder.
     Faster than loading COMB object.
     '''
-    plane_path = get_plane_path_from_session_key_and_plane_id(session_key, plane_id, data_dir=data_dir)
+    plane_path = Path(plane_path)
+    plane_id = plane_path.name
     dff_path = plane_path / 'dff'
     h5_fn = dff_path / f'{plane_id}_dff.h5'
     if not os.path.isfile(h5_fn):
@@ -569,6 +569,16 @@ def load_dff(session_key, plane_id,
     with h5py.File(h5_fn, 'r') as h:
         dff = h['data'][:]
     return dff
+
+
+def load_dff(session_key, plane_id,
+             data_dir=Path('/root/capsule/data')):
+    ''' Load dff for a given session and plane ID
+    It can be retrieved from extraction folder.
+    Faster than loading COMB object.
+    '''
+    plane_path = get_plane_path_from_session_key_and_plane_id(session_key, plane_id, data_dir=data_dir)
+    return load_dff_from_plane_path(plane_path)
 
 
 def load_raw_roi_fluorescence(session_key, plane_id,
