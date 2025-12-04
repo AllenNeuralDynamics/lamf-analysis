@@ -469,6 +469,8 @@ def plot_contour_and_projections(roi_df, img, mask_key="mask_matrix",
 def plot_contour_and_projections_all(roi_df, img, mask_key="mask_matrix",
                                  vmin=None, vmax=None, colors=['y','r'], ax=None,
                                  ind=None):
+    ''' Plot ROI contours, for both valid and invalid ROIs in different colors
+    '''
     
     # plot contours
     if ax is None:
@@ -481,8 +483,6 @@ def plot_contour_and_projections_all(roi_df, img, mask_key="mask_matrix",
 
     if ind is not None:
         row = roi_df.iloc[ind]
-        x = row['x']
-        y = row['y']
         mask = np.array(row[mask_key]>0)
         pad = 5
         mask = np.pad(mask, pad, mode='constant', constant_values=0) # pad mask so contour works on edge
@@ -494,8 +494,6 @@ def plot_contour_and_projections_all(roi_df, img, mask_key="mask_matrix",
             ax.plot(contour[:, 1], contour[:, 0], linewidth=.5, color=color)
     else:
         for roi_id, row in roi_df.iterrows():
-            x = row['x']
-            y = row['y']
             mask = np.array(row[mask_key]>0)
             pad = 5
             mask = np.pad(mask, pad, mode='constant', constant_values=0) # pad mask so contour works on edge
@@ -507,7 +505,6 @@ def plot_contour_and_projections_all(roi_df, img, mask_key="mask_matrix",
                 ax.plot(contour[:, 1], contour[:, 0], linewidth=.5, color=color)
 
     ax.axis('off')
-
 
     return ax
 
