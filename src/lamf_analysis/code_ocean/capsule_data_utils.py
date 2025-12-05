@@ -7,6 +7,7 @@ import glob
 from pathlib import Path
 import h5py
 import time
+import fnmatch
 
 from codeocean import CodeOcean
 from codeocean.data_asset import (DataAssetSearchParams,
@@ -15,14 +16,14 @@ from codeocean.components import SearchFilter
 
 import aind_session
 from aind_session import Session
-from aind_ophys_data_access import capsule
 from comb.behavior_ophys_dataset import BehaviorOphysDataset, BehaviorMultiplaneOphysDataset
-from aind_ophys_data_access import rois
 from comb import file_handling
 
 from lamf_analysis.code_ocean import capsule_bod_utils as cbu
 import lamf_analysis.utils as lamf_utils
-from lamf_analysis.code_ocean import docdb_utils
+from lamf_analysis.code_ocean import (docdb_utils,
+                                      s3_utils)
+from lamf_analysis.code_ocean import code_ocean_utils as cou
 
 import logging
 logger = logging.getLogger(__name__)
@@ -32,92 +33,8 @@ DEFAULT_MOUNT_TO_IGNORE = ['fb4b5cef-4505-4145-b8bd-e41d6863d7a9', # Ophys_Exten
 TIME_FORMAT = '[0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
 DATE_FORMAT = '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
 
-def get_co_client():
-    domain="https://codeocean.allenneuraldynamics.org/"
-    token = os.getenv('API_SECRET')
-    client = CodeOcean(domain=domain, token=token)
-    return client
 
-
-def get_data_asset_search_results(query_str, mouse_id=None):
-    ''' Get data asset search results from CodeOcean
-    example: 
-        query_str = f'conditioned_mean_response_v2' # works for data asset name beginning with this string
-        results = get_data_asset_search_results(query_str, mouse_id)
-    '''
-    client = get_co_client()
-    data_asset_params = DataAssetSearchParams(
-        offset=0,
-        limit=None,
-        sort_order="desc",
-        sort_field="name",
-        type="dataset",
-        archived=False,
-        favorite=False,
-        query=query_str
-    )
-    data_assets = client.data_assets.search_data_assets(data_asset_params)
-    if mouse_id is not None:
-        results = [da for da in data_assets.results if f'{mouse_id}' in da.name]
-    else:
-        results = data_assets.results
-    return results
-
-
-def set_data_asset_params(mouse_id, data_name='multiplane-ophys', data_level='raw',
-                          offset=0, limit=1000):
-    data_asset_params = DataAssetSearchParams(
-        offset=offset,
-        limit=limit,
-        sort_order="desc",
-        sort_field="name",
-        archived=False,
-        favorite=False,
-        # query="name:'multiplane-ophys'",
-        filters=[        
-            SearchFilter(
-                key="tags",
-                value=str(mouse_id)
-            ),
-            SearchFilter(
-                key="name",
-                value=data_name
-            ),
-            SearchFilter(
-                key="tags",
-                value=data_level
-            )
-        ]
-    )
-    return data_asset_params
-
-
-def get_mouse_sessions_by_filters(mouse_id, data_name='multiplane-ophys', data_level='raw',
-                                  offset=0, limit=1000):
-    client = get_co_client()
-    data_asset_params = set_data_asset_params(mouse_id=mouse_id, data_name=data_name, data_level=data_level,
-                                              offset=offset, limit=limit)
-    results = []
-    while True:
-        data_asset_params = set_data_asset_params(mouse_id=mouse_id, 
-                                                  data_name=data_name, data_level=data_level,
-                                                  offset=offset, limit=limit)
-        data_asset_search_results = client.data_assets.search_data_assets(data_asset_params)
-        results.extend(data_asset_search_results.results)
-        if ~data_asset_search_results.has_more:
-            break
-        data_asset_params.offset += data_asset_params.limit
-    
-    sessions = set()
-    for restuls in results:
-        name = restuls.name
-        session = Session(name)
-        sessions.add(session)
-    sessions = tuple(sorted(sessions, key=lambda s: s.dt))
-    return sessions
-
-
-def get_mouse_session_df(mouse_id,
+def get_mouse_session_df(subject_id,
                          processed_date_after=None,
                          processed_date_before=None,
                          include_pupil=True):
@@ -130,11 +47,11 @@ def get_mouse_session_df(mouse_id,
         * capsule_id and commit_id can be used to filter (hopefully using look-up table)
     '''
     success = True
-    # mouse_sessions = aind_session.get_sessions(subject_id=mouse_id) # This errors out with "unauthorized issue"
+    # mouse_sessions = aind_session.get_sessions(subject_id=subject_id) # This errors out with "unauthorized issue"
     # Temporary fix while awaiting SciComp solution 2025/09/30 JK
-    mouse_sessions = get_mouse_sessions_by_filters(mouse_id=mouse_id)
+    mouse_sessions = cou.get_mouse_sessions_by_filters(subject_id=subject_id)
     # to prevent errors (happens when adding faulty tags)
-    mouse_sessions = tuple([ms for ms in mouse_sessions if ms.subject_id == str(mouse_id)])
+    mouse_sessions = tuple([ms for ms in mouse_sessions if ms.subject_id == str(subject_id)])
 
     raw_data_date_list = []
     processed_data_date_list = []
@@ -223,13 +140,105 @@ def add_dff_long_baseline_window_to_mouse_df(mouse_df):
     dff_long_window_dict = {item['code_ocean_id']: item['long_window'] for item in dff_long_windows}
     mouse_df['dff_long_window'] = mouse_df['processed_data_asset_id'].map(dff_long_window_dict)
     return mouse_df
+
+
+def get_cortical_zstack_sessions(subject_id,
+                                 czstack_name_regex='*_cortical_z_stack*.tif*',
+                                 czstack_key='column_z_stack',
+                                 verbose=False):
+    ''' Get all cortical zstack sessions for a given subject_id (subject_id)
+    '''
+    session_infos = docdb_utils.get_session_infos_from_docdb(subject_id=subject_id)
+    def _find_keys(d, key_substr):
+        keys = []
+        for k, v in d.items():
+            if key_substr in k:
+                keys.append((k, v))
+            if isinstance(v, dict):
+                keys.extend(_find_keys(v, key_substr))
+            if isinstance(v, list):
+                for item in v:
+                    if isinstance(item, dict):
+                        keys.extend(_find_keys(item, key_substr))
+        return keys
+    
+    # check sessions with cortical z-stack from s3 file names
+    czstack_sessions = []
+    czstack_fn_list = []
+    num_error = 0
+    for session_info in session_infos.itertuples():
+        filepaths = s3_utils.list_files_from_s3_location(session_info.s3_path)
+        # find filepaths that match with czstack_name_regex (within s3 filepaths)
+ 
+        czstack_fn = fnmatch.filter(filepaths, czstack_name_regex)
+        assert len(czstack_fn) < 2, f"More than one czstack found in {session_info.raw_asset_name} with regex {czstack_name_regex}"
+        if len(czstack_fn) == 0:
+            if verbose:
+                print(f"No czstack with the input format {czstack_name_regex}")
+                print("Checking platform.json")
+ 
+            platform_json_s3_path = fnmatch.filter(filepaths, '*platform.json')
+            if len(platform_json_s3_path) != 1:
+                if verbose:
+                    print('='*40)
+                    print('                 ERROR')
+                    print('='*40)
+                    print(f"No platform.json found in {session_info.raw_asset_name}, skipping session.")
+                num_error += 1
+                continue
+            platform_json_s3_path = platform_json_s3_path[0]
+            platform_json = s3_utils.read_json_from_s3(platform_json_s3_path)
+            czstack_fn_tuple = _find_keys(platform_json, czstack_key)
+ 
+            if not czstack_fn_tuple:
+                if verbose:
+                    print(f"No column_z_stack found in {platform_json_s3_path}, skipping session.")
+                continue
+            if len(set(czstack_fn_tuple)) > 1:
+                if verbose:
+                    print('='*40)
+                    print('                 ERROR')
+                    print('='*40)
+                    print(f"Multiple column_z_stack keys found in {platform_json_s3_path}")
+                num_error += 1
+                continue
+            czstack_fn_candidate = czstack_fn_tuple[0][1]
+            czstack_fn = fnmatch.filter(filepaths, czstack_fn_candidate)
+            if len(czstack_fn) == 0:
+                if verbose:
+                    print('='*40)
+                    print('                 ERROR')
+                    print('='*40)
+                    print(f"column_z_stack file {czstack_fn_candidate} from platform.json not found in {session_info.raw_asset_name}, skipping session.")
+                num_error += 1
+                continue
+            elif len(czstack_fn) > 1:
+                if verbose:
+                    print('='*40)
+                    print('                 ERROR')
+                    print('='*40)
+                    print(f"Multiple files found for column_z_stack file {czstack_fn_candidate} from platform.json in {session_info.raw_asset_name}, skipping session.")
+                num_error += 1
+                continue
+        czstack_fn = czstack_fn[0].split('/')[-1]
+        czstack_fn_list.append(czstack_fn)
+        czstack_sessions.append(session_info)
+    if num_error > 0:
+        print(f"\nContinuing despite {num_error} errors so far.")
+    else:
+        print("\nNo errors found.")
+    czstack_sessions = pd.DataFrame(czstack_sessions)
+    return czstack_sessions, czstack_fn_list
         
 
-def attach_mouse_data_assets(mouse_session_df, include_pupil=True):
+def attach_mouse_data_assets(mouse_session_df, include_pupil=True,
+                             co_client=None):
     ''' Attach mouse data assets to mouse session dataframe.
     Built to use the results from get_mouse_session_df.
     Returns if successful.
     '''
+    if co_client is None:
+        co_client = cou.get_co_client()
     assert np.all([isinstance(raw_id, str) for raw_id in mouse_session_df.raw_data_asset_id.values]), \
         'raw data asset ids must be str'
     if include_pupil:
@@ -237,53 +246,13 @@ def attach_mouse_data_assets(mouse_session_df, include_pupil=True):
         f'"include_pupil" set to {include_pupil}, so must provide appropriate pupil data asset ids'
     success = True
     try:
-        capsule.attach_assets(mouse_session_df.raw_data_asset_id.values)
-        capsule.attach_assets(mouse_session_df.processed_data_asset_id.values)
+        cou.attach_assets(mouse_session_df.raw_data_asset_id.values, co_client=co_client)
+        cou.attach_assets(mouse_session_df.processed_data_asset_id.values, co_client=co_client)
         if include_pupil:
-            capsule.attach_assets(mouse_session_df.pupil_data_asset_id.values)
+            cou.attach_assets(mouse_session_df.pupil_data_asset_id.values, co_client=co_client)
     except:
         success = False
     return success
-
-
-def attach_assets(asset_ids:list, client=None):
-    """Attach list of asset_ids to capusle with CodeOcean SDK, print mount state
-    
-    Parameters
-    ----------
-    assets : list
-        list of asset_ids
-        Example: ['1az0c240-1a9z-192b-pa4c-22bac5ffa17b', '1az0c240-1a9z-192b-pa4c-22bac5ffa17b']
-    client : object
-        CodeOcean client object
-        If None, must set "API_SECRET" in environment variable for CodeOcean token
-        
-    Returns
-    -------
-    None
-    """
-    
-    if client is None:
-        client = get_co_client()
-
-    # DataAssetAttachParams(id="1az0c240-1a9z-192b-pa4c-22bac5ffa17b", mount="Reference")
-    data_assets = [DataAssetAttachParams(id=aid) for aid in asset_ids]        
-            
-    results = client.capsules.attach_data_assets(
-        capsule_id=os.getenv("CO_CAPSULE_ID"),
-        attach_params=data_assets,
-    )
-
-    for target_id in asset_ids:
-        result = next((item for item in results if item.id == target_id), None)
-
-        if result:
-            ms = result.mount_state
-            logger.info(f"asset_id: {target_id} - mount_state: {ms}")
-            print(f"asset_id: {target_id} - mount_state: {ms}")
-        else:
-            print(f"asset_id: {target_id} - not found in CodeOcean API response")
-    return
 
 
 def check_attached_data_assets(mouse_df_to_attach, 
@@ -346,7 +315,7 @@ def attach_data_assets_with_repeats(mouse_df_to_attach, data_dir=Path('/root/cap
     return False
 
 
-def get_session_info(mouse_id, data_dir='/root/capsule/data'):
+def get_session_info(subject_id, data_dir='/root/capsule/data'):
     ''' Get all raw data paths in the data directory
     '''
     data_folders = [d for d in glob.glob(data_dir + '/*') if Path(d).is_dir()]
@@ -356,7 +325,7 @@ def get_session_info(mouse_id, data_dir='/root/capsule/data'):
                         ('stimuli' not in d.split('/')[-1]) and
                         ('stim-response' not in d.split('/')[-1]) and
                         ('ROICat' not in d.split('/')[-1]) and
-                        (str(mouse_id) in d.split('/')[-1]) and
+                        (str(subject_id) in d.split('/')[-1]) and
                         ('zstack' not in d.split('/')[-1])])
 
     session_names = [d.split('/')[-1] for d in raw_paths]
@@ -586,13 +555,13 @@ def get_plane_path_from_session_key_and_plane_id(session_key, plane_id,
     return plane_path
 
 
-def load_dff(session_key, plane_id,
-             data_dir=Path('/root/capsule/data')):
-    ''' Load dff for a given session and plane ID
+def load_dff_from_plane_path(plane_path):
+    ''' Load dff for a given plane path
     It can be retrieved from extraction folder.
     Faster than loading COMB object.
     '''
-    plane_path = get_plane_path_from_session_key_and_plane_id(session_key, plane_id, data_dir=data_dir)
+    plane_path = Path(plane_path)
+    plane_id = plane_path.name
     dff_path = plane_path / 'dff'
     h5_fn = dff_path / f'{plane_id}_dff.h5'
     if not os.path.isfile(h5_fn):
@@ -600,6 +569,16 @@ def load_dff(session_key, plane_id,
     with h5py.File(h5_fn, 'r') as h:
         dff = h['data'][:]
     return dff
+
+
+def load_dff(session_key, plane_id,
+             data_dir=Path('/root/capsule/data')):
+    ''' Load dff for a given session and plane ID
+    It can be retrieved from extraction folder.
+    Faster than loading COMB object.
+    '''
+    plane_path = get_plane_path_from_session_key_and_plane_id(session_key, plane_id, data_dir=data_dir)
+    return load_dff_from_plane_path(plane_path)
 
 
 def load_raw_roi_fluorescence(session_key, plane_id,
@@ -650,6 +629,42 @@ def load_decrosstalked_mean_image(session_key, plane_id,
     return mean_img
 
 
+def load_projection_image(plane_path, projection_type='mean'):
+    """
+    Find and load a decrosstalked projection image (mean or max) from the extraction HDF5 file for a given plane path.
+
+    Args:
+        plane_path (str or Path): Path to the plane directory containing the extraction HDF5 file.
+        projection_type (str, optional): Type of projection image to load. Must be either 'mean' or 'max'. Defaults to 'mean'.
+
+    Returns:
+        numpy.ndarray: The requested projection image as a NumPy array.
+
+    Raises:
+        AssertionError: If zero or more than one extraction HDF5 file is found in the plane path.
+        ValueError: If `projection_type` is not 'mean' or 'max'.
+        KeyError: If the requested projection image key is not found in the HDF5 file.
+        OSError: If the HDF5 file cannot be opened.
+
+    Example:
+        >>> img = load_projection_image('/path/to/plane', projection_type='max')
+        >>> print(img.shape)
+    """
+    # use glob
+    plane_path = Path(plane_path)
+    extraction_path = list(plane_path.rglob('*_extraction.h5'))
+    assert len(extraction_path) == 1, f"Expected exactly 1 extraction file, found {len(extraction_path)} in {plane_path}"
+    if projection_type == "mean":
+        key = "meanImg"
+    elif projection_type == "max":
+        key = "maxImg"
+    else:
+        raise ValueError(f"'projection_type' must be either 'mean' or 'max', instead got {projection_type}")
+    with h5py.File(extraction_path[0], 'r') as h:
+        img = h[key][:]
+    return img
+
+
 def get_roi_table_from_h5(session_key, plane_id,
                     data_dir = Path('/root/capsule/data')):
     ''' Load ROI table for a given session and plane ID
@@ -687,7 +702,7 @@ def get_roi_table_from_plane_path(plane_path, apply_filter=True, small_roi_radiu
         raise ValueError(f'No extraction file found for {plane_id}')
     pixel_masks = file_handling.load_sparse_array(extraction_fn)
             
-    roi_table = rois.roi_table_from_mask_arrays(pixel_masks)
+    roi_table = roi_table_from_mask_arrays(pixel_masks)
     roi_table = roi_table.rename(columns={'id': 'cell_roi_id'})
 
     if apply_filter:
@@ -716,6 +731,53 @@ def get_roi_table_from_plane_path(plane_path, apply_filter=True, small_roi_radiu
         
         roi_table['small_roi'] = roi_table['mask_matrix'].apply(lambda x: len(np.where(x)[0]) < area_threshold)
         roi_table['valid_roi'] = ~roi_table['touching_motion_border'] & ~roi_table['small_roi']
+
+    return roi_table
+
+
+def roi_table_from_mask_arrays(pixel_masks: np.ndarray,
+                               index_name: str = 'id'):
+    columns = ['mask_matrix',
+                'height',
+                'width',
+                'x',
+                'y',
+                'centroid',
+                'bounding_box',
+                'valid_roi',
+                'exclusion_labels']
+
+    roi_table = pd.DataFrame(index=range(pixel_masks.shape[0]), columns=columns)
+    for i in range(pixel_masks.shape[0]):
+        roi_mask = pixel_masks[i]
+        roi_table.loc[i, 'mask_matrix'] = roi_mask
+    
+        # find a bounding box around roi
+        non_zero_coords = np.array(np.where(roi_mask > 0))  # Shape (2, N) where N = number of non-zero points
+
+        # Get the bounds of the bounding box
+        min_row, min_col = non_zero_coords.min(axis=1)
+        max_row, max_col = non_zero_coords.max(axis=1)
+
+        # Bounding box coordinates
+        bounding_box = (min_row, min_col, max_row, max_col)
+        height = max_row - min_row
+        width = max_col - min_col
+
+        roi_table.loc[i, 'bounding_box'] = [bounding_box]
+        roi_table.loc[i, 'height'] = height
+        roi_table.loc[i, 'width'] = width
+        roi_table.loc[i, 'x'] = min_col
+        roi_table.loc[i, 'y'] = min_row
+        roi_table.loc[i, 'centroid'] = (min_col + width / 2, min_row + height / 2)
+        
+        # legacy attributes
+        roi_table.loc[i, 'valid_roi'] = True
+        roi_table.loc[i, 'exclusion_labels'] = None
+
+    # reset and rename col
+    roi_table.index.name = index_name
+    roi_table = roi_table.reset_index(drop=False)
 
     return roi_table
 

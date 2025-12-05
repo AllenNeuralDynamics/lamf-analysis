@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "id": "50f6fef0-a52f-4a12-ad8a-3ed8aabe810f",
+      "timestamp": "2025-10-29T18:14:35Z",
+      "session_key": "767018-12-18",
+      "qc_type": "acquisition",
+      "level": "plane",
+      "category": "image_quality",
+      "plane_id": "VISp_0",
+      "status": "fail",
+      "message": "unknown acquisition error",
+      "details": null,
+      "asset_name": null,
+      "asset_id": null,
+      "entry_type": "qc"
+    }
+  ]
+}

@@ -1,6 +1,8 @@
 import os
 import pandas as pd
 from aind_data_access_api.document_db import MetadataDbClient
+import lamf_analysis.code_ocean.capsule_data_utils as cdu
+import lamf_analysis.code_ocean.code_ocean_utils as cou
 from codeocean import CodeOcean
 
 
@@ -15,7 +17,25 @@ def get_docdb_api_client():
         )
     return docdb_api_client
 
-    
+
+def get_session_info_for_session_key(session_key, docdb_api_client=None,
+                                 data_type='multiplane-ophys'):
+    # Validate session_key format: must be 'subjectid_date' (exactly one underscore)
+    if not isinstance(session_key, str) or session_key.count('_') != 1:
+        raise ValueError(f"session_key '{session_key}' is not in the expected format 'subjectid_date'")
+    subject_id, date_part = session_key.split('_')
+    if not subject_id or not date_part:
+        raise ValueError(f"session_key '{session_key}' must have non-empty subjectid and date parts")
+    session_infos = get_session_infos_from_docdb(subject_id, docdb_api_client,
+                                                data_type=data_type,
+                                                filter_test_data=False)
+    session_info = session_infos.query('session_name == @session_key')
+    if len(session_info) == 0:
+        raise AssertionError(f"Session {session_key} not found in DocDB.")
+    if len(session_info) > 1:
+        raise AssertionError(f"Multiple sessions found for {session_key}.")
+    return session_info.iloc[0].to_dict()
+
 
 def get_session_infos_from_docdb(subject_id, docdb_api_client=None,
                                  data_type='multiplane-ophys',
@@ -38,14 +58,16 @@ def get_session_infos_from_docdb(subject_id, docdb_api_client=None,
             reward_consumed = response['session']['reward_consumed_total']
             rig_id = response['session']['rig_id']
             data_asset_name = response['name']            
-            data_asset_id = response['external_links']['Code Ocean'][0]            
+            data_asset_id = response['external_links']['Code Ocean'][0]
+            s3_path = response['location']
             temp_info = {"acquisition_date": acquisition_date,
                         "session_type": session_type,
                         "reward_consumed": reward_consumed,
                         "rig_id": rig_id,
-                        "session_name": session_name,
+                        "session_key": session_name,
                         "raw_asset_name": data_asset_name,
                         "raw_asset_id": data_asset_id,
+                        "s3_path": s3_path
                         }
             session_infos = pd.concat([session_infos, pd.DataFrame(temp_info, index=[0])], ignore_index=True)
             # else:
@@ -119,7 +141,7 @@ def get_dff_long_baseline_window(processed_asset_ids, docdb_api_client=None):
     return results
 
 
-def get_processed_data_info(mouse_id, docdb_api_client=None):
+def get_processed_data_info(subject_id, docdb_api_client=None):
     if docdb_api_client is None:
         docdb_api_client = get_docdb_api_client()
     agg_pipeline = [
@@ -134,7 +156,7 @@ def get_processed_data_info(mouse_id, docdb_api_client=None):
                         "name": "dF/F estimation",
                     }
                 },
-                'subject.subject_id': str(mouse_id),
+                'subject.subject_id': str(subject_id),
             }
         },
         # Project to include name and count of data_processes
@@ -179,20 +201,20 @@ def get_processed_data_info(mouse_id, docdb_api_client=None):
     return results_df
 
 
-def get_dlc_eye_data_info(mouse_id, docdb_api_client=None):
+def get_dlc_eye_data_info(subject_id, docdb_api_client=None):
     if docdb_api_client is None:
         docdb_api_client = get_docdb_api_client()
     agg_pipeline = [
         {
             '$match': {
                 'name': {'$regex': 'dlc-eye', '$options': 'i'},
-                'processing.processing_pipeline.data_processes': {
-                    '$exists': True,
-                    '$elemMatch': {
-                        "code_url": "https://github.com/AllenNeuralDynamics/aind-capsule-eye-tracking",
-                    }
-                },
-                'subject.subject_id': str(mouse_id),
+                # 'processing.processing_pipeline.data_processes': {
+                #     '$exists': True,
+                #     '$elemMatch': {
+                #         "code_url": "https://github.com/AllenNeuralDynamics/aind-capsule-eye-tracking",
+                #     }
+                # },
+                'subject.subject_id': str(subject_id),
             }
         },
         # Project to include name and count of data_processes
@@ -256,7 +278,7 @@ def filter_data_asset_info_by_long_window(data_asset_info, target_long_window):
 
 def check_exist_in_code_ocean(results_df, co_client=None):
     if co_client is None:
-        co_client = get_co_client()
+        co_client = cou.get_co_client()
     for _, row in results_df.iterrows():
         data_asset_id = row['data_asset_id']
         data_asset_name = row['name']
@@ -266,7 +288,7 @@ def check_exist_in_code_ocean(results_df, co_client=None):
 
 
 # Getting derived assets (from analysis)
-def get_derived_data_assets(mouse_id, suffix, parameters=None, docdb_api_client=None):
+def get_derived_data_assets(subject_id, suffix, parameters=None, docdb_api_client=None):
     if docdb_api_client is None:
         docdb_api_client = get_docdb_api_client()
     
@@ -274,7 +296,7 @@ def get_derived_data_assets(mouse_id, suffix, parameters=None, docdb_api_client=
         {        
             '$match': {
                 'name': {'$regex': suffix, '$options': 'i'},
-                'subject.subject_id': str(mouse_id),
+                'subject.subject_id': str(subject_id),
             }
         },
         {
@@ -298,7 +320,8 @@ def get_derived_data_assets(mouse_id, suffix, parameters=None, docdb_api_client=
         project_params = {f"{k}": f"$process.parameters.{k}" for k in parameters.keys()}
         base_project = {'name': 1,
                 '_id': 1,
-                'code_ocean_id': 1,}
+                'code_ocean_id': 1,
+                }
         updated_project = {**base_project, **project_params}
         append_pipeline = [
             {

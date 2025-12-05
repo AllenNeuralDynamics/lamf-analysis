@@ -27,7 +27,7 @@ from sklearn.cluster import KMeans
 # import visual_behavior_glm.GLM_analysis_tools as gat  # to get recent glm results
 # import visual_behavior_glm.GLM_params as glm_params
 
-import umap
+# import umap
 import random
 from scipy import signal
 import matplotlib.pyplot as plt

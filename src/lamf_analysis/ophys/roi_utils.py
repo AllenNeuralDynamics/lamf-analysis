@@ -414,11 +414,11 @@ def plot_contours_overlap_two_masks(mask1: np.ndarray,
     if img is not None:
         assert img.shape == mask1shape
         vmax = np.percentile(img, 99.6)
-        ax.imshow(img, vmax=vmax, cmap=plt.cm.gray)
+        ax.imshow(img, vmax=vmax, cmap='gray')
     else:
         print()
         bg = np.ones(mask1shape)
-        ax.imshow(bg, cmap=plt.cm.gray, vmin=0, vmax=1)
+        ax.imshow(bg, cmap='gray', vmin=0, vmax=1)
 
     # Plot contours
     for i in range(mask1_3d.shape[0]):
@@ -434,6 +434,77 @@ def plot_contours_overlap_two_masks(mask1: np.ndarray,
 
     return ax
 
+
+def plot_contour_and_projections(roi_df, img, mask_key="mask_matrix",
+                                 vmin=None, vmax=None, color='r', ax=None):
+    
+    # plot contours
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(10, 10))
+    if vmax is None:
+        vmax = np.percentile(img, 99.6)
+    if vmin is None:
+        vmin = np.percentile(img, 0.4)
+    ax.imshow(img, vmin=vmin, vmax=vmax, cmap='gray')
+
+    for roi_id, row in roi_df.iterrows():
+
+        mask = np.array(row[mask_key]>0)
+        pad = 5
+        mask = np.pad(mask, pad, mode='constant', constant_values=0) # pad mask so contour works on edge
+        contours = measure.find_contours(mask, 0.5)
+        
+        for n, contour in enumerate(contours):
+            contour = contour - pad # remove pad from contour
+            ax.plot(contour[:, 1], contour[:, 0], linewidth=.5, color=color)
+
+    ax.axis('off')
+
+
+    return ax
+
+
+def plot_contour_and_projections_all(roi_df, img, mask_key="mask_matrix",
+                                 vmin=None, vmax=None, colors=['y','r'], ax=None,
+                                 ind=None):
+    ''' Plot ROI contours, for both valid and invalid ROIs in different colors
+    '''
+    
+    # plot contours
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(10, 10))
+    if vmax is None:
+        vmax = np.percentile(img, 99.6)
+    if vmin is None:
+        vmin = np.percentile(img, 0.4)
+    ax.imshow(img, vmin=vmin, vmax=vmax, cmap='gray')
+
+    if ind is not None:
+        row = roi_df.iloc[ind]
+        mask = np.array(row[mask_key]>0)
+        pad = 5
+        mask = np.pad(mask, pad, mode='constant', constant_values=0) # pad mask so contour works on edge
+        contours = measure.find_contours(mask, 0.5)
+        color = colors[int(row['valid_roi'])]
+        
+        for n, contour in enumerate(contours):
+            contour = contour - pad # remove pad from contour
+            ax.plot(contour[:, 1], contour[:, 0], linewidth=.5, color=color)
+    else:
+        for roi_id, row in roi_df.iterrows():
+            mask = np.array(row[mask_key]>0)
+            pad = 5
+            mask = np.pad(mask, pad, mode='constant', constant_values=0) # pad mask so contour works on edge
+            contours = measure.find_contours(mask, 0.5)
+            color = colors[int(row['valid_roi'])]
+            
+            for n, contour in enumerate(contours):
+                contour = contour - pad # remove pad from contour
+                ax.plot(contour[:, 1], contour[:, 0], linewidth=.5, color=color)
+
+    ax.axis('off')
+
+    return ax
 
 # TODO: typical plots for 
 # def plot_rois_gt_vs_pred(mask1: np.ndarray,
