@@ -2,30 +2,7 @@ import pandas as pd
 
 from lamf_analysis.code_ocean import s3_utils
 from lamf_analysis.code_ocean import code_ocean_utils as cou
-
-def _find_keys(d, key_substr):
-    """
-    Recursively search a nested dict/list structure for keys containing a substring.
-
-    Parameters:
-        d (dict): The dictionary to search.
-        key_substr (str): Substring to match in keys.
-
-    Returns:
-        list[tuple[str, Any]]: List of (key, value) pairs for matching keys. Values may be
-        dicts, lists, or scalar types depending on the source structure.
-    """
-    keys = []
-    for k, v in d.items():
-        if key_substr in k:
-            keys.append((k, v))
-        if isinstance(v, dict):
-            keys.extend(_find_keys(v, key_substr))
-        if isinstance(v, list):
-            for item in v:
-                if isinstance(item, dict):
-                    keys.extend(_find_keys(item, key_substr))
-    return keys
+from lamf_analysis import utils
 
 
 def get_roi_groups_metadata(s3_path):
@@ -90,8 +67,8 @@ def find_stack_xy_info(s3_path):
         IndexError: If expected keys are not present.
     """
     roi_groups_metadata = get_roi_groups_metadata(s3_path)
-    sizeXY = _find_keys(roi_groups_metadata, 'sizeXY')[0][1]
-    dimXY = _find_keys(roi_groups_metadata, 'pixelResolutionXY')[0][1]
+    sizeXY = utils.find_keys(roi_groups_metadata, 'sizeXY')[0][1]
+    dimXY = utils.find_keys(roi_groups_metadata, 'pixelResolutionXY')[0][1]
     return sizeXY, dimXY
 
 
@@ -111,9 +88,9 @@ def find_stack_z_info(s3_path):
         ValueError: If casting to float/int fails.
     """
     scanimage_metadata = get_scanimage_metadata(s3_path)
-    z_step_size = float(_find_keys(scanimage_metadata, 'SI.hStackManager.actualStackZStepSize')[0][1])
-    z_num_slices = int(_find_keys(scanimage_metadata, 'SI.hStackManager.actualNumSlices')[0][1])
-    num_volumes = int(_find_keys(scanimage_metadata, 'SI.hStackManager.actualNumVolumes')[0][1])
+    z_step_size = float(utils.find_keys(scanimage_metadata, 'SI.hStackManager.actualStackZStepSize')[0][1])
+    z_num_slices = int(utils.find_keys(scanimage_metadata, 'SI.hStackManager.actualNumSlices')[0][1])
+    num_volumes = int(utils.find_keys(scanimage_metadata, 'SI.hStackManager.actualNumVolumes')[0][1])
     
     return z_step_size, z_num_slices, num_volumes
 
@@ -134,8 +111,8 @@ def find_stack_acquisition_info(s3_path):
         IndexError: If expected keys are not present.
     """
     scanimage_metadata = get_scanimage_metadata(s3_path)
-    zstack_actuator = _find_keys(scanimage_metadata, 'SI.hStackManager.stackActuator')[0][1]
-    zstack_mode = _find_keys(scanimage_metadata, 'SI.hStackManager.stackMode')[0][1]
+    zstack_actuator = utils.find_keys(scanimage_metadata, 'SI.hStackManager.stackActuator')[0][1]
+    zstack_mode = utils.find_keys(scanimage_metadata, 'SI.hStackManager.stackMode')[0][1]
     if (zstack_actuator == "fastZ") and (zstack_mode == "fast"):
         zstack_acquisition_mode = "loop"
     else:
