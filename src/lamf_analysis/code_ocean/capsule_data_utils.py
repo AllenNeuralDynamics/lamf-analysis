@@ -414,7 +414,9 @@ def get_bod_list(raw_path):
     opids = []
     for plane_folder in processed_path.glob("*"):
         if plane_folder.is_dir() and not plane_folder.name.startswith("nextflow") \
-            and not ('nwb' in plane_folder.name):
+            and not ('nwb' in plane_folder.name) \
+            and not ('vasculature' in plane_folder.name) \
+            and not ('matched' in plane_folder.name):
             opid = plane_folder.name
             opids.append(opid)
 
