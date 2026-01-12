@@ -414,7 +414,9 @@ def get_bod_list(raw_path):
     opids = []
     for plane_folder in processed_path.glob("*"):
         if plane_folder.is_dir() and not plane_folder.name.startswith("nextflow") \
-            and not ('nwb' in plane_folder.name):
+            and not ('nwb' in plane_folder.name) \
+            and not ('vasculature' in plane_folder.name) \
+            and not ('matched' in plane_folder.name):
             opid = plane_folder.name
             opids.append(opid)
 
@@ -597,13 +599,20 @@ def load_raw_roi_fluorescence(session_key, plane_id,
     return raw_roi_fluourescence
 
 
-def load_corrected_fluorescence(session_key, plane_id,
+def load_corrected_fluorescence(session_key=None, plane_id=None, plane_path=None,
                                  data_dir = Path('/root/capsule/data')):
     ''' Load corrected fluorescence for a given session and plane ID
     It can be retrieved from extraction folder.
     Faster than loading COMB object.
     '''
-    plane_path = get_plane_path_from_session_key_and_plane_id(session_key, plane_id, data_dir=data_dir)
+    if plane_path is None:
+        assert session_key is not None and plane_id is not None, \
+            'Must provide either plane_path or both session_key and plane_id'
+        plane_path = get_plane_path_from_session_key_and_plane_id(session_key, plane_id, data_dir=data_dir)
+    else:
+        print('Using provided plane_path to load corrected fluorescence')
+        plane_id = Path(plane_path).name
+    plane_path = Path(plane_path)
     extraction_path = plane_path / 'extraction'
     h5_fn = extraction_path / f'{plane_id}_extraction.h5'
     if not os.path.isfile(h5_fn):

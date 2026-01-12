@@ -1,3 +1,6 @@
+from pathlib import Path
+import json
+import h5py
 import pandas as pd
 
 from lamf_analysis.code_ocean import s3_utils
@@ -172,3 +175,68 @@ def get_cortical_zstack_reg_df(subject_ids):
     czstack_reg_results_df['xy_size_pix'] = czstack_reg_results_df['xy_info'].apply(lambda x: x[1][0])
     czstack_reg_results_df['xy_resolution'] = czstack_reg_results_df.apply(lambda x: x['xy_size_um'] / x['xy_size_pix'], axis=1)
     return czstack_reg_results_df
+
+
+########################################################
+## Local z-stacks
+########################################################
+
+
+def get_local_zstack_filepath(plane_path):
+    plane_path = Path(plane_path)
+    plane_name = plane_path.stem    
+    local_zstack_path = plane_path / f'{plane_name}_z_stack_local.h5'
+    if not local_zstack_path.exists():        
+        raise FileNotFoundError(f"Z-stack file not found: {local_zstack_path}")
+    else:
+        return local_zstack_path
+
+
+def get_local_zstack_reg_filepath(plane_path):
+    plane_path = Path(plane_path)
+    plane_name = plane_path.stem    
+    local_zstack_path = plane_path / f'movie_qc/{plane_name}_z_stack_local_reg.h5'
+    if not local_zstack_path.exists():        
+        raise FileNotFoundError(f"Z-stack file not found: {local_zstack_path}")
+    else:
+        return local_zstack_path
+    
+
+def get_local_zstack_info(plane_path):
+    """ Extract z-stack information from a local z-stack HDF5 file.
+    Assume local z-stacks are processed on the rig and copied to processed data asset
+    """
+    local_zstack_path = get_local_zstack_filepath(plane_path)    
+    with h5py.File(local_zstack_path, 'r') as f:
+        metadata = f['scanimage_metadata'][()]
+        metadata = json.loads(metadata)
+        roi_groups_metadata = metadata[1]
+        scanimage_metadata = metadata[0]
+
+    sizeXY = _find_keys(roi_groups_metadata, 'sizeXY')[0][1][0]
+    dimXY = _find_keys(roi_groups_metadata, 'pixelResolutionXY')[0][1][0]
+    size_xy_um = get_xy_size_um(sizeXY, dimXY)
+    resolution_xy_um = size_xy_um / dimXY
+
+    z_step_size = float(_find_keys(scanimage_metadata, 'SI.hStackManager.actualStackZStepSize')[0][1])
+    z_num_slices = int(_find_keys(scanimage_metadata, 'SI.hStackManager.actualNumSlices')[0][1])
+    num_volumes = int(_find_keys(scanimage_metadata, 'SI.hStackManager.actualNumVolumes')[0][1])
+    zstack_actuator = _find_keys(scanimage_metadata, 'SI.hStackManager.stackActuator')[0][1]
+    zstack_mode = _find_keys(scanimage_metadata, 'SI.hStackManager.stackMode')[0][1]
+    if (zstack_actuator == "fastZ") and (zstack_mode == "fast"):
+        zstack_acquisition_mode = "loop"
+    else:
+        zstack_acquisition_mode = "step"
+
+    # make dictionary
+    zstack_info = {
+        "sizeXY": sizeXY,
+        "dimXY": dimXY,
+        "size_xy_um": size_xy_um,
+        "resolution_xy_um": resolution_xy_um,
+        "z_step_size_um": z_step_size,
+        "z_num_slices": z_num_slices,
+        "num_volumes": num_volumes,
+        "zstack_acquisition_mode": zstack_acquisition_mode
+    }
+    return zstack_info
