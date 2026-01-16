@@ -13,6 +13,34 @@ from aind_ophys_utils.motion_border_utils import get_max_correction_from_df
 
 
 ####################################################################################################
+# General
+####################################################################################################
+
+def find_keys(d, key_substr):
+    """
+    Recursively search a nested dict/list structure for keys containing a substring.
+
+    Parameters:
+        d (dict): The dictionary to search.
+        key_substr (str): Substring to match in keys.
+
+    Returns:
+        list[tuple[str, Any]]: List of (key, value) pairs for matching keys. Values may be
+        dicts, lists, or scalar types depending on the source structure.
+    """
+    keys = []
+    for k, v in d.items():
+        if key_substr in k:
+            keys.append((k, v))
+        if isinstance(v, dict):
+            keys.extend(find_keys(v, key_substr))
+        if isinstance(v, list):
+            for item in v:
+                if isinstance(item, dict):
+                    keys.extend(find_keys(item, key_substr))
+    return keys
+
+####################################################################################################
 # Code Ocean: Ophys
 ####################################################################################################
 

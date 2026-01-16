@@ -3,6 +3,7 @@ import pandas as pd
 from aind_data_access_api.document_db import MetadataDbClient
 import lamf_analysis.code_ocean.capsule_data_utils as cdu
 import lamf_analysis.code_ocean.code_ocean_utils as cou
+from lamf_analysis import utils
 from codeocean import CodeOcean
 
 
@@ -288,7 +289,10 @@ def check_exist_in_code_ocean(results_df, co_client=None):
 
 
 # Getting derived assets (from analysis)
-def get_derived_data_assets(subject_id, suffix, parameters=None, docdb_api_client=None):
+def get_derived_data_assets(subject_id, suffix,
+                            parameters=None,
+                            use_docdb_parameter_search=False,
+                            docdb_api_client=None):
     if docdb_api_client is None:
         docdb_api_client = get_docdb_api_client()
     
@@ -304,6 +308,7 @@ def get_derived_data_assets(subject_id, suffix, parameters=None, docdb_api_clien
                 "_id": 1,
                 "name": 1,
                 "code_ocean_id": {"$arrayElemAt": ["$external_links.Code Ocean", 0]},
+                "location": 1,
                 "process": {
                     "$arrayElemAt": ["$processing.processing_pipeline.data_processes", 0]
                 }
@@ -316,23 +321,23 @@ def get_derived_data_assets(subject_id, suffix, parameters=None, docdb_api_clien
     ]
     if parameters is not None:
         assert isinstance(parameters, dict), "parameters should be a dictionary"
-        match_params = {f"process.parameters.{k}": v for k, v in parameters.items()}
-        project_params = {f"{k}": f"$process.parameters.{k}" for k in parameters.keys()}
-        base_project = {'name': 1,
-                '_id': 1,
-                'code_ocean_id': 1,
-                }
-        updated_project = {**base_project, **project_params}
-        append_pipeline = [
-            {
-                '$match': match_params
-            },
-            # Project to include name and count of data_processes
-            {
-                '$project': updated_project
-            }]
-        agg_pipeline.extend(append_pipeline)
-
+        if use_docdb_parameter_search:
+            match_params = {f"process.parameters.{k}": v for k, v in parameters.items()}
+            project_params = {f"{k}": f"$process.parameters.{k}" for k in parameters.keys()}
+            base_project = {'name': 1,
+                    '_id': 1,
+                    'code_ocean_id': 1,
+                    }
+            updated_project = {**base_project, **project_params}
+            append_pipeline = [
+                {
+                    '$match': match_params
+                },
+                # Project to include name and count of data_processes
+                {
+                    '$project': updated_project
+                }]
+            agg_pipeline.extend(append_pipeline)
 
     results = docdb_api_client.aggregate_docdb_records(pipeline=agg_pipeline)
     if len(results) == 0:
@@ -341,6 +346,14 @@ def get_derived_data_assets(subject_id, suffix, parameters=None, docdb_api_clien
     results_df = pd.DataFrame(results)
     results_df['derived_date'] = results_df['name'].str.split('_').str[-2]
     results_df['raw_name'] = results_df['name'].apply(lambda x: x.lower().split(f'_{suffix.lower()}_')[0])
+
+    # if parameters is not None:
+    #     if use_docdb_parameter_search == False:
+    #         def _find_parameter(s3_path):
+    #             processing_s3_path = [fp for fp in s3_utils.list_files_from_s3_location(results[0]['location']) if fp.endswith('processing.json')][0]
+    #             processing_json = s3_utils.read_json_from_s3(processing_s3_path)
+    #             utils.find_keys(processing_json, 'dff_long_window')[0][1]
+
 
     # remove one column called '_id'
     results_df = results_df.drop(columns=['_id'], errors='ignore')
