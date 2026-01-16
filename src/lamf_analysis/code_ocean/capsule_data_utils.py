@@ -559,7 +559,7 @@ def get_plane_path_from_session_key_and_plane_id(session_key, plane_id,
 
 def load_dff_from_plane_path(plane_path):
     ''' Load dff for a given plane path
-    It can be retrieved from extraction folder.
+    It can be retrieved from dff folder.
     Faster than loading COMB object.
     '''
     plane_path = Path(plane_path)
@@ -576,7 +576,7 @@ def load_dff_from_plane_path(plane_path):
 def load_dff(session_key, plane_id,
              data_dir=Path('/root/capsule/data')):
     ''' Load dff for a given session and plane ID
-    It can be retrieved from extraction folder.
+    It can be retrieved from dff folder.
     Faster than loading COMB object.
     '''
     plane_path = get_plane_path_from_session_key_and_plane_id(session_key, plane_id, data_dir=data_dir)
@@ -620,6 +620,30 @@ def load_corrected_fluorescence(session_key=None, plane_id=None, plane_path=None
     with h5py.File(h5_fn, 'r') as h:
         corrected_fluorescence = h['traces']['corrected'][:]
     return corrected_fluorescence
+
+
+def load_events_from_plane_path(plane_path):
+    ''' Load events for a given plane path
+    It can be retrieved from events folder.
+    Faster than loading COMB object.
+    '''
+    plane_path = Path(plane_path)
+    plane_id = plane_path.name
+    events_path = plane_path / 'events'
+    h5_fn = events_path / f'{plane_id}_events_oasis.h5'
+    with h5py.File(h5_fn, 'r') as h:
+        events = h['events'][:]
+    return events
+
+
+def load_events(session_key, plane_id,
+             data_dir=Path('/root/capsule/data')):
+    ''' Load events for a given session and plane ID
+    It can be retrieved from events folder.
+    Faster than loading COMB object.
+    '''
+    plane_path = get_plane_path_from_session_key_and_plane_id(session_key, plane_id, data_dir=data_dir)
+    return load_events_from_plane_path(plane_path)
 
 
 def load_decrosstalked_mean_image(session_key, plane_id,
