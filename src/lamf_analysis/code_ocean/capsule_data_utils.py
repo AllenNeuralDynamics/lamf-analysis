@@ -864,7 +864,7 @@ def get_frame_rate_from_plane_path(plane_path):
     if not os.path.isdir(plane_path):
         raise ValueError(f'Path not found ({plane_path})')
     session_json = get_session_json_from_plane_path(plane_path)
-    frame_rate = float(session_json['data_streams'][0]['ophys_fovs'][0]['frame_rate'])
+    frame_rate = float(lamf_utils.find_keys(session_json, 'frame_rate', exact_match=True)[0][1])
     return frame_rate
 
 
