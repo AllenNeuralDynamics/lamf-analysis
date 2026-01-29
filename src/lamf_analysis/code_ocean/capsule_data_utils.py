@@ -18,6 +18,7 @@ import aind_session
 from aind_session import Session
 from comb.behavior_ophys_dataset import BehaviorOphysDataset, BehaviorMultiplaneOphysDataset
 from comb import file_handling
+from comb.processing.sync.sync_utilities import get_synchronized_frame_times
 
 from lamf_analysis.code_ocean import capsule_bod_utils as cbu
 import lamf_analysis.utils as lamf_utils
@@ -745,7 +746,7 @@ def get_roi_table_from_plane_path(plane_path, apply_filter=True, small_roi_radiu
         fov_info = session_json['data_streams'][0]['ophys_fovs'][0] # assume this data is the same for all fovs
         fov_height = fov_info['fov_height']
         fov_width = fov_info['fov_width']
-        fov_scale_factor = float(fov_info['fov_scale_factor'])
+        pixel_size_um = get_pixel_size_um(get_raw_path_from_plane_path(plane_path))
         
         on_mask = np.zeros((fov_height, fov_width), dtype=bool)
         on_mask[range_y[0]:range_y[1], range_x[0]:range_x[1]] = True
@@ -759,7 +760,7 @@ def get_roi_table_from_plane_path(plane_path, apply_filter=True, small_roi_radiu
 
         roi_table['touching_motion_border'] = roi_table.apply(_touching_motion_border, axis=1, motion_mask=motion_mask)
         
-        small_roi_radius_threshold_in_pix = small_roi_radius_threshold_in_um / float(fov_scale_factor)
+        small_roi_radius_threshold_in_pix = small_roi_radius_threshold_in_um / float(pixel_size_um)
         area_threshold = np.pi * (small_roi_radius_threshold_in_pix**2)
         
         roi_table['small_roi'] = roi_table['mask_matrix'].apply(lambda x: len(np.where(x)[0]) < area_threshold)
@@ -884,3 +885,86 @@ def get_decrosstalked_movie_file(plane_path):
         raise ValueError(f'No decrosstalked movie found for {plane_id}')    
     return decrosstalked_movie_fn
 
+
+def get_decrosstalked_emf_file(plane_path):
+    ''' Load decrosstalked emf for a given plane path
+    It can be retrieved from extraction folder.
+    Faster than loading COMB object.
+    '''
+    if isinstance(plane_path, str):
+        plane_path = Path(plane_path)
+    if not os.path.isdir(plane_path):
+        raise ValueError(f'Path not found ({plane_path})')
+    plane_id = plane_path.name
+    decrosstalk_path = plane_path / 'decrosstalk'
+    decrosstalked_emf_fn = decrosstalk_path / f'{plane_id}_decrosstalk_episodic_mean_fov.h5'
+    if not os.path.isfile(decrosstalked_emf_fn):
+        raise ValueError(f'No decrosstalked emf found for {plane_id}')    
+    return decrosstalked_emf_fn
+
+
+def get_pixel_size_um(raw_path):
+    platform_file = next((raw_path / 'pophys').glob('*platform.json'))
+    with open(platform_file, 'r') as f:
+        platform_info = json.load(f)
+    pixel_size_um = lamf_utils.find_keys(platform_info['imaging_plane_groups'][0], 'pixel_size_um')[0][1]
+    return pixel_size_um
+
+
+def get_raw_path_from_plane_path(plane_path):
+    ''' Get raw path from plane path
+    assuming there are both in the same data directory
+    '''
+    if isinstance(plane_path, str):
+        plane_path = Path(plane_path)
+    if not os.path.isdir(plane_path):
+        raise ValueError(f'Path not found ({plane_path})')
+    session_name = plane_path.parent.name.split('_processed')[0]
+    raw_path = plane_path.parent.parent / session_name
+    if not os.path.isdir(raw_path):
+        raise ValueError(f'Raw path not found ({raw_path})')
+    return raw_path
+
+
+def get_stim_table_csv(plane_path):
+    raw_path = get_raw_path_from_plane_path(plane_path)
+    stim_table_csv_path = next(raw_path.rglob('*stim_table.csv'))
+    stim_table = pd.read_csv(stim_table_csv_path)
+    return stim_table
+
+
+def get_sync_file(plane_path):
+    raw_path = get_raw_path_from_plane_path(plane_path)
+    sync_fps = list((raw_path / 'behavior').glob('*.h5'))
+    assert len(sync_fps) == 1, f"Expected one sync file, found {len(sync_fps)}"
+    return sync_fps[0]
+
+
+def get_plane_group_count_and_index(plane_path):
+    session_json = get_session_json_from_plane_path(plane_path)
+    fov_metadata = session_json['data_streams'][0]['ophys_fovs']
+    plane_group_indices = [fov['coupled_fov_index'] for fov in fov_metadata]
+    plane_group_count = len(set(plane_group_indices))
+
+    plane_names = [f"{fov['targeted_structure']}_{fov['index']}" for fov in fov_metadata]
+    plane_name = plane_path.name
+    plane_group_index = plane_names.index(plane_name)
+    return (plane_group_count, plane_group_index)
+
+
+def get_ophys_timestamps(plane_path):
+    sync_fp = get_sync_file(plane_path)
+    ophys_timestamps = get_synchronized_frame_times(session_sync_file=sync_fp,
+                                                    sync_line_label_keys=('2p_vsync', 'vsync_2p'),
+                                                    drop_frames=None,
+                                                    trim_after_spike=True)
+
+    # resample for mesoscope data, planes are interleaved in sync file
+    ts_len = len(ophys_timestamps)
+    group_count, plane_group = get_plane_group_count_and_index(plane_path)
+    # Sometimes, the number of timestamps across planes do not match. Force them by trimming at the end.
+    trailing_frames = ts_len % group_count
+    if trailing_frames != 0:
+        ophys_timestamps = ophys_timestamps[:-trailing_frames]
+    ophys_timestamps = ophys_timestamps[plane_group::group_count]
+    return ophys_timestamps

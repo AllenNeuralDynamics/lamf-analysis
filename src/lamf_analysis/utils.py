@@ -33,7 +33,7 @@ def find_keys(d, key_substr, exact_match=False, return_unique=True):
     for k, v in d.items():
         if exact_match:
             if k == key_substr:
-                keys.append((k, v))
+                keys.append((v))
         else:
             if key_substr in k:
                 keys.append((k, v))            
