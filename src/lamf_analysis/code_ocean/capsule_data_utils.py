@@ -968,3 +968,69 @@ def get_ophys_timestamps(plane_path):
         ophys_timestamps = ophys_timestamps[:-trailing_frames]
     ophys_timestamps = ophys_timestamps[plane_group::group_count]
     return ophys_timestamps
+
+
+def get_intended_depth(plane_path):
+    # first, get targeted depth matched to the current plane using plane name
+    plane_name = plane_path.name
+    session_json = get_session_json_from_plane_path(plane_path)
+    fov_metadata = session_json['data_streams'][0]['ophys_fovs']
+    plane_names_in_metadata = [f"{fov['targeted_structure']}_{fov['index']}" for fov in fov_metadata]
+    plane_index = plane_names_in_metadata.index(plane_name)
+    targeted_depth = fov_metadata[plane_index]['imaging_depth']
+
+    # Then, find the corresponding intended depth from platform.json
+    raw_path = get_raw_path_from_plane_path(plane_path)
+    platform_file = next((raw_path / 'pophys').glob('*platform.json'))
+    with open(platform_file, 'r') as f:
+        platform_info = json.load(f)
+    targeted_depths = []
+    intended_depths = []
+    for plane_group in platform_info['imaging_plane_groups']:
+        for plane in plane_group['imaging_planes']:
+            targeted_depths.append(plane['targeted_depth'])
+            intended_depths.append(plane['intended_depth'])
+    matched_ind = targeted_depths.index(targeted_depth)
+    intended_depth = intended_depths[matched_ind]
+    return intended_depth
+
+
+def get_power_values(plane_path):
+    session_json = get_session_json_from_plane_path(plane_path)
+    fov_metadata = session_json['data_streams'][0]['ophys_fovs']
+    power_tuples = [(fov['power'], fov['power_ratio']) for fov in fov_metadata]
+    return power_tuples
+
+
+def get_baseline_traces(plane_path):
+    ''' Load baseline traces for a given plane path
+    It can be retrieved from extraction folder.
+    Faster than loading COMB object.
+    '''
+    if isinstance(plane_path, str):
+        plane_path = Path(plane_path)
+    if not os.path.isdir(plane_path):
+        raise ValueError(f'Path not found ({plane_path})')
+    dff_paths = list((plane_path/'dff').glob('*_dff.h5'))
+    assert len(dff_paths) == 1, f'Multiple or no dff file found for {plane_id}'
+    dff_path = dff_paths[0]
+    with h5py.File(dff_path, 'r') as h:
+        baseline_traces = h['baseline'][:]
+    return baseline_traces
+
+
+def get_dff_noise(plane_path):
+    ''' Load dff noise values for a given plane path
+    It can be retrieved from extraction folder.
+    Faster than loading COMB object.
+    '''
+    if isinstance(plane_path, str):
+        plane_path = Path(plane_path)
+    if not os.path.isdir(plane_path):
+        raise ValueError(f'Path not found ({plane_path})')
+    dff_paths = list((plane_path/'dff').glob('*_dff.h5'))
+    assert len(dff_paths) == 1, f'Multiple or no dff file found for {plane_id}'
+    dff_path = dff_paths[0]
+    with h5py.File(dff_path, 'r') as h:
+        noise = h['noise'][:]
+    return noise

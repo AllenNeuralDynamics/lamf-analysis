@@ -436,7 +436,10 @@ def plot_contours_overlap_two_masks(mask1: np.ndarray,
 
 
 def plot_contour_and_projections(roi_df, img, mask_key="mask_matrix",
-                                 vmin=None, vmax=None, color='r', ax=None):
+                                 vmin=None, vmax=None, color='r', ax=None,
+                                 add_scale_bar: bool = False,
+                                 scale_bar_um: int = 100,
+                                 um_in_pix=None):
     
     # plot contours
     if ax is None:
@@ -460,13 +463,30 @@ def plot_contour_and_projections(roi_df, img, mask_key="mask_matrix",
 
     ax.axis('off')
 
+    if add_scale_bar:
+        if um_in_pix is None:
+            print("um_in_pix must be provided to add scale bar")
+        else:
+            # add scale bar
+            scale_bar_size = int(scale_bar_um / um_in_pix)
+            width = img.shape[1]
+            scalebar = matplotlib.lines.Line2D([width - 10, width - (10 + scale_bar_size)], [img.shape[0] - 10, img.shape[0] - 10],
+                                            color='white', linewidth=5)
+            ax.add_line(scalebar)
+            ax.text(width - (10 + scale_bar_size / 2), img.shape[0] - 20, f'{scale_bar_um} µm',
+                    color='white', ha='center', va='bottom', fontsize=12)
 
     return ax
 
 
 def plot_contour_and_projections_all(roi_df, img, mask_key="mask_matrix",
                                  vmin=None, vmax=None, colors=['y','r'], ax=None,
-                                 ind=None):
+                                 ind=None,
+                                 add_scale_bar: bool = False,
+                                 scale_bar_um: int = 100,
+                                 um_in_pix=None,
+                                 scale_bar_buffer: int = 20,
+                                 scale_bar_linewidth: int = 5):
     ''' Plot ROI contours, for both valid and invalid ROIs in different colors
     '''
     
@@ -503,6 +523,22 @@ def plot_contour_and_projections_all(roi_df, img, mask_key="mask_matrix",
                 ax.plot(contour[:, 1], contour[:, 0], linewidth=.5, color=color)
 
     ax.axis('off')
+
+    if add_scale_bar:
+        if um_in_pix is None:
+            print("um_in_pix must be provided to add scale bar")
+        else:
+            # add scale bar
+            scale_bar_size = int(scale_bar_um / um_in_pix)
+            width = img.shape[1]
+            scalebar = matplotlib.lines.Line2D([width - scale_bar_buffer, width - (scale_bar_buffer + scale_bar_size)],
+                                               [img.shape[0] - scale_bar_buffer, img.shape[0] - scale_bar_buffer],
+                                               color='white', linewidth=5)
+            ax.add_line(scalebar)
+            ax.text(width - (scale_bar_buffer + scale_bar_size / 2),
+                    img.shape[0] - scale_bar_buffer - scale_bar_linewidth*2,
+                    f'{scale_bar_um} µm',
+                    color='white', ha='center', va='bottom', fontsize=12)
 
     return ax
 
