@@ -34,19 +34,17 @@ def process_running_speed(bsd,
     running_df['is_jittering'] = (running_df['roll_std'] > jitter_threshold) & (~running_df['is_running'])
 
 
-def get_running_epochs(bsd,
-                       behavior_type: str, # 'running' or 'stationary'
-                       duration_threshold_in_s: float = 5.0,
-                       running_speed_processing_args: dict = {
-                            'mean_window_size': 2.0, # seconds
-                            'std_window_size': 1.0, # seconds
-                            'run_threshold': 5.0,  # speed threshold for running from rolling mean
-                            'jitter_threshold': 0.5,  # std threshold for jittering from rolling std
-                            },
-                       ):
-    ''' Get running or stationary epochs from BehaviorSessionDataset object
-    Returns list of (start_time, end_time) tuples
-    '''
+def get_running_epochs(
+    bsd,
+    behavior_type: str,  # 'running' or 'stationary'
+    duration_threshold_in_s: float = 5.0,
+    running_speed_processing_args: dict | None = None,
+):
+    """Get running or stationary epochs from BehaviorSessionDataset object.
+    Returns list of (start_time, end_time) tuples.
+    """
+    if running_speed_processing_args is None:
+        running_speed_processing_args = {}
     process_running_speed(bsd, **running_speed_processing_args)
     running_df = bsd.running_speed
     is_running = running_df['is_running'].values
