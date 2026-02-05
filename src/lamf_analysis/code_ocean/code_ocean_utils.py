@@ -55,7 +55,10 @@ def get_co_raw_id_from_name(raw_name, client=None):
         query=raw_name,
     )
     results = client.data_assets.search_data_assets(data_asset_params).results
-    assert len(results) == 1
+    assert len(results) == 1, (
+        f"Expected exactly one raw asset matching name '{raw_name}', "
+        f"found {len(results)}"
+    )
     assert 'raw' in results[0].tags
     raw_id = results[0].id
     return raw_id
