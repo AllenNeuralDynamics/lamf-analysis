@@ -36,6 +36,31 @@ def get_co_client():
     return client
 
 
+def get_co_raw_id_from_name(raw_name, client=None):
+    ''' Get raw data asset ID from CodeOcean by name
+    example:
+        raw_name = '1299958728_2022-03-15_13-28-02_multiplane-ophys_raw'
+        raw_id = get_co_raw_id_from_name(raw_name)
+    '''
+    if client is None:
+        client = get_co_client()
+    data_asset_params = DataAssetSearchParams(
+        offset=0,
+        limit=None,
+        sort_order="desc",
+        sort_field="name",
+        type="dataset",
+        archived=False,
+        favorite=False,
+        query=raw_name,
+    )
+    results = client.data_assets.search_data_assets(data_asset_params).results
+    assert len(results) == 1
+    assert 'raw' in results[0].tags
+    raw_id = results[0].id
+    return raw_id
+
+
 def get_data_asset_search_results(query_str, subject_id=None):
     ''' Get data asset search results from CodeOcean
     example: 
@@ -243,8 +268,8 @@ def attach_assets(assets: list, co_client=None):
     # DataAssetAttachParams(id="1az0c240-1a9z-192b-pa4c-22bac5ffa17b", mount="Reference")
     data_assets = [DataAssetAttachParams(id=aid) for aid in assets]        
             
-    results = co_client.capsules.attach_data_assets(
-        capsule_id=os.getenv("CO_CAPSULE_ID"),
+    results = co_client.computations.attach_data_assets(
+        computation_id=os.getenv("CO_COMPUTATION_ID"),
         attach_params=data_assets,
     )
 

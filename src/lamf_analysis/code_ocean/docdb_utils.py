@@ -56,14 +56,14 @@ def get_session_infos_from_docdb(subject_id, docdb_api_client=None,
             acquisition_date = response['session']['session_start_time'][:10]
             session_name = subject_id + "_" + acquisition_date
             session_type = response['session']['session_type']
-            reward_consumed = response['session']['reward_consumed_total']
+            # reward_consumed = response['session']['reward_consumed_total']. # all have None
             rig_id = response['session']['rig_id']
             data_asset_name = response['name']            
             data_asset_id = response['external_links']['Code Ocean'][0]
             s3_path = response['location']
             temp_info = {"acquisition_date": acquisition_date,
                         "session_type": session_type,
-                        "reward_consumed": reward_consumed,
+                        # "reward_consumed": reward_consumed,
                         "rig_id": rig_id,
                         "session_key": session_name,
                         "raw_asset_name": data_asset_name,
