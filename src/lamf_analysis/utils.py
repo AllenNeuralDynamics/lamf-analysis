@@ -26,14 +26,18 @@ def find_keys(d, key_substr, exact_match=False, return_unique=True):
         exact_match (bool): If True, only exact key matches are returned.
 
     Returns:
+    if exact_match is False:
         list[tuple[str, Any]]: List of (key, value) pairs for matching keys. Values may be
+        dicts, lists, or scalar types depending on the source structure.
+    if exact_match is True:
+        list[Any]: List of values for keys that exactly match key_substr. Values may be
         dicts, lists, or scalar types depending on the source structure.
     """
     keys = []
     for k, v in d.items():
         if exact_match:
             if k == key_substr:
-                keys.append((k, v))
+                keys.append(v)
         else:
             if key_substr in k:
                 keys.append((k, v))            
