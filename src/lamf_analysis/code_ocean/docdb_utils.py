@@ -74,6 +74,8 @@ def get_session_infos_from_docdb(subject_id, docdb_api_client=None,
             # else:
             #     print(f"Schema version {schema_version} not handled.")
     
+    if len(session_infos) == 0:
+        return None
     session_infos.sort_values(by='acquisition_date', inplace=True)
     session_infos.reset_index(drop=True, inplace=True)
     session_infos['session_type_exposures'] = session_infos.groupby('session_type').cumcount() + 1
@@ -189,6 +191,8 @@ def get_processed_data_info(subject_id, docdb_api_client=None):
 
     results = docdb_api_client.aggregate_docdb_records(pipeline=agg_pipeline)
 
+    if len(results) == 0:
+        return None
     results_df = pd.DataFrame(results)
     results_df['processed_date'] = results_df['name'].str.split('_').str[-2]
     results_df['raw_name'] = results_df['name'].str.split('_processed_').str[0]

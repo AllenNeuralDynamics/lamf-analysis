@@ -194,7 +194,7 @@ def collate_masks(mask_3d1, mask_3d2, iou_threshold=0.3):
     else:
         assert mask_3d1.max() == mask_3d1.shape[0]
         assert mask_3d2.max() == mask_3d2.shape[0]
-    iou_mat, ioa_mat1, ioa_mat2 = get_iou_ioa_mat(mask_3d1, mask_3d2)
+    iou_mat, ioa_mat1, ioa_mat2 = get_iou_ioa_mat_sparse(mask_3d1, mask_3d2)
 
     num_unique_in_mask1 = len(np.where(np.sum(iou_mat >= iou_threshold, axis=1) == 0)[0])
     num_unique_in_mask2 = len(np.where(np.sum(iou_mat >= iou_threshold, axis=0) == 0)[0])

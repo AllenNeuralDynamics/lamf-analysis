@@ -2,7 +2,7 @@ import numpy as np
 
 ## About running
 def total_run_distance(bsd):
-    ''' Calcualte total run distance from BehavrioSessionDataset object
+    ''' Calculate total run distance from BehaviorSessionDataset object
     Returns in meters
     '''
     running_df = bsd.running_speed
