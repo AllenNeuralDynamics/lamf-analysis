@@ -533,7 +533,7 @@ def plot_contour_and_projections_all(roi_df, img, mask_key="mask_matrix",
             width = img.shape[1]
             scalebar = matplotlib.lines.Line2D([width - scale_bar_buffer, width - (scale_bar_buffer + scale_bar_size)],
                                                [img.shape[0] - scale_bar_buffer, img.shape[0] - scale_bar_buffer],
-                                               color='white', linewidth=5)
+                                               color='white', linewidth=scale_bar_linewidth)
             ax.add_line(scalebar)
             ax.text(width - (scale_bar_buffer + scale_bar_size / 2),
                     img.shape[0] - scale_bar_buffer - scale_bar_linewidth*2,
