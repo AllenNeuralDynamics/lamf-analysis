@@ -468,7 +468,7 @@ def plot_contour_and_projections(roi_df, img, mask_key="mask_matrix",
             print("um_in_pix must be provided to add scale bar")
         else:
             # add scale bar
-            scale_bar_size = int(scale_bar_um / um_in_pix)
+            scale_bar_size = max(1, int(scale_bar_um / um_in_pix))
             width = img.shape[1]
             scalebar = matplotlib.lines.Line2D([width - 10, width - (10 + scale_bar_size)], [img.shape[0] - 10, img.shape[0] - 10],
                                             color='white', linewidth=5)
