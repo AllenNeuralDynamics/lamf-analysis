@@ -296,7 +296,9 @@ def check_exist_in_code_ocean(results_df, co_client=None):
 def get_derived_data_assets(subject_id, suffix,
                             parameters=None,
                             use_docdb_parameter_search=False,
-                            docdb_api_client=None):
+                            docdb_api_client=None,
+                            filter_based_on_date_format=False,
+                            date_format_column='derived_date',):
     if docdb_api_client is None:
         docdb_api_client = get_docdb_api_client()
     
@@ -365,5 +367,25 @@ def get_derived_data_assets(subject_id, suffix,
     results_df = results_df.rename(
                     columns={'name': 'derived_name',
                             'code_ocean_id': 'derived_asset_id'})
+    if filter_based_on_date_format:
+        assert date_format_column in results_df.columns, f"{date_format_column} not found in results_df columns"
+        results_df = filter_df_based_on_date_format(results_df, date_format_column)
 
     return results_df
+
+
+def filter_df_based_on_date_format(df, date_column):
+    """ Filter a DataFrame to include only rows where the date column has the format YYYY-MM-DD.
+    Args:
+        df (pd.DataFrame): The input DataFrame to filter.
+        date_column (str): The name of the column containing the date strings.
+    Returns:
+        pd.DataFrame: A filtered DataFrame containing only rows with valid date formats.
+    """    # Define a regular expression pattern for the date format YYYY-MM-DD
+    date_pattern = r'^\d{4}-\d{2}-\d{2}$'
+    # Use the str.match method to filter rows based on the date format
+    filtered_df = df[df[date_column].str.match(date_pattern, na=False)].copy()
+    # real calendar date (invalid -> NaT)
+    filtered_df[date_column] = pd.to_datetime(filtered_df[date_column], errors='coerce')
+    filtered_df = filtered_df.dropna(subset=[date_column])    
+    return filtered_df

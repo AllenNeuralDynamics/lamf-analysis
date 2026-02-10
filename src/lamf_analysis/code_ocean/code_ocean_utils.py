@@ -32,6 +32,8 @@ DATE_FORMAT = '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
 def get_co_client():
     domain="https://codeocean.allenneuraldynamics.org/"
     token = os.getenv('API_SECRET')
+    if token is None:
+        token = os.getenv('CUSTOM_KEY')
     client = CodeOcean(domain=domain, token=token)
     return client
 
