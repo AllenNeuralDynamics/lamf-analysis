@@ -918,15 +918,45 @@ def get_intended_depth(plane_path):
     platform_file = next((raw_path / 'pophys').glob('*platform.json'))
     with open(platform_file, 'r') as f:
         platform_info = json.load(f)
+    intended_depth_finds = lamf_utils.find_keys(platform_info, 'intended_depth', exact_match=True)
+    if len(intended_depth_finds) == 0:
+        print(f'No intended depth found in platform info for {plane_path}, returning targeted depth as fallback')
+        return targeted_depth
     targeted_depths = []
     intended_depths = []
     for plane_group in platform_info['imaging_plane_groups']:
         for plane in plane_group['imaging_planes']:
             targeted_depths.append(plane['targeted_depth'])
             intended_depths.append(plane['intended_depth'])
+    if len(np.unique(intended_depths)) != len(intended_depths):
+        print(f'Multiple same intended depth found in platform info for {plane_path}, cannot determine intended depth, returning targeted depth as fallback')
+        return targeted_depth
     matched_ind = targeted_depths.index(targeted_depth)
     intended_depth = intended_depths[matched_ind]
     return intended_depth
+
+
+def get_zdrift_um(plane_path):
+    try:
+        evaluation_path = next((plane_path / 'movie_qc').glob('*_z_drift_evaluation.json'))
+    except StopIteration:
+        print(f"No z-drift evaluation found for {plane_path}")
+        return None
+    with open(evaluation_path) as f:
+        evaluation_data = json.load(f)
+    z_drift_um = lamf_utils.find_keys(evaluation_data, 'z_drift_um', exact_match=True)
+    z_drift_um = z_drift_um[0] if z_drift_um else None
+    return z_drift_um
+
+
+def get_local_zstack_reg(plane_path):
+    local_zstack_reg_file = next(plane_path.glob('*_z_stack_local_reg.h5'), None)
+    if local_zstack_reg_file is None or not local_zstack_reg_file.exists():
+        print(f'Local zstack registration file {local_zstack_reg_file} does not exist, skipping')
+        return None
+    with h5py.File(local_zstack_reg_file, 'r') as f:
+        local_zstack_reg = f['data'][:]
+    return local_zstack_reg
 
 
 def get_power_values(plane_path):
