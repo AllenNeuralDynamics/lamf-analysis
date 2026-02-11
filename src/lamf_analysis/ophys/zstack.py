@@ -1159,7 +1159,7 @@ def reg_between_planes(stack_imgs,
 
     temp_stack_imgs[ref_ind, :, :] = ref_stack_imgs[ref_ind, :, :]
     shift_all = []
-    shift_all.append([0, 0])
+    shift_all.append(np.array([0, 0]))
     for i in range(ref_ind + 1, num_planes):
         # Calculation valid pixels
         temp_ref = np.mean(
