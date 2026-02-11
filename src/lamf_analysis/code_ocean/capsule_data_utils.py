@@ -25,6 +25,7 @@ import lamf_analysis.utils as lamf_utils
 from lamf_analysis.code_ocean import (docdb_utils,
                                       s3_utils)
 from lamf_analysis.code_ocean import code_ocean_utils as cou
+from lamf_analysis.ophys import roi_utils
 
 import logging
 logger = logging.getLogger(__name__)
@@ -735,85 +736,18 @@ def get_roi_table_from_plane_path(plane_path, apply_filter=True, small_roi_radiu
     if not os.path.isfile(extraction_fn):
         raise ValueError(f'No extraction file found for {plane_id}')
     pixel_masks = file_handling.load_sparse_array(extraction_fn)
-            
-    roi_table = roi_table_from_mask_arrays(pixel_masks)
+
+    roi_table = roi_utils.roi_table_from_mask_arrays(pixel_masks)
     roi_table = roi_table.rename(columns={'id': 'cell_roi_id'})
 
     if apply_filter:
-        range_y, range_x = lamf_utils.get_motion_correction_crop_xy_range(plane_path)
-
-        session_json = get_session_json_from_plane_path(plane_path)
-        fov_info = session_json['data_streams'][0]['ophys_fovs'][0] # assume this data is the same for all fovs
-        fov_height = fov_info['fov_height']
-        fov_width = fov_info['fov_width']
-        pixel_size_um = get_pixel_size_um(get_raw_path_from_plane_path(plane_path))
-        
-        on_mask = np.zeros((fov_height, fov_width), dtype=bool)
-        on_mask[range_y[0]:range_y[1], range_x[0]:range_x[1]] = True
-        motion_mask = ~on_mask
-
-        def _touching_motion_border(row, motion_mask):
-            if (row.mask_matrix * motion_mask).any():
-                return True
-            else:
-                return False
-
-        roi_table['touching_motion_border'] = roi_table.apply(_touching_motion_border, axis=1, motion_mask=motion_mask)
-        
-        small_roi_radius_threshold_in_pix = small_roi_radius_threshold_in_um / float(pixel_size_um)
-        area_threshold = np.pi * (small_roi_radius_threshold_in_pix**2)
-        
-        roi_table['small_roi'] = roi_table['mask_matrix'].apply(lambda x: len(np.where(x)[0]) < area_threshold)
-        roi_table['valid_roi'] = ~roi_table['touching_motion_border'] & ~roi_table['small_roi']
+        roi_table = roi_utils.apply_filter_to_roi_table(roi_table, plane_path,
+                                              small_roi_radius_threshold_in_um=small_roi_radius_threshold_in_um)
 
     return roi_table
 
 
-def roi_table_from_mask_arrays(pixel_masks: np.ndarray,
-                               index_name: str = 'id'):
-    columns = ['mask_matrix',
-                'height',
-                'width',
-                'x',
-                'y',
-                'centroid',
-                'bounding_box',
-                'valid_roi',
-                'exclusion_labels']
 
-    roi_table = pd.DataFrame(index=range(pixel_masks.shape[0]), columns=columns)
-    for i in range(pixel_masks.shape[0]):
-        roi_mask = pixel_masks[i]
-        roi_table.loc[i, 'mask_matrix'] = roi_mask
-    
-        # find a bounding box around roi
-        non_zero_coords = np.array(np.where(roi_mask > 0))  # Shape (2, N) where N = number of non-zero points
-
-        # Get the bounds of the bounding box
-        min_row, min_col = non_zero_coords.min(axis=1)
-        max_row, max_col = non_zero_coords.max(axis=1)
-
-        # Bounding box coordinates
-        bounding_box = (min_row, min_col, max_row, max_col)
-        height = max_row - min_row
-        width = max_col - min_col
-
-        roi_table.loc[i, 'bounding_box'] = [bounding_box]
-        roi_table.loc[i, 'height'] = height
-        roi_table.loc[i, 'width'] = width
-        roi_table.loc[i, 'x'] = min_col
-        roi_table.loc[i, 'y'] = min_row
-        roi_table.loc[i, 'centroid'] = (min_col + width / 2, min_row + height / 2)
-        
-        # legacy attributes
-        roi_table.loc[i, 'valid_roi'] = True
-        roi_table.loc[i, 'exclusion_labels'] = None
-
-    # reset and rename col
-    roi_table.index.name = index_name
-    roi_table = roi_table.reset_index(drop=False)
-
-    return roi_table
 
 
 def get_session_json_from_plane_path(plane_path):
