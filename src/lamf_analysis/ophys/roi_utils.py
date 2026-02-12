@@ -514,13 +514,14 @@ def plot_contours_overlap_two_masks(mask1: np.ndarray,
         fig, ax = plt.subplots(figsize=(7, 7))
 
     if colors is None:
-        colors = ['r', 'b']
+        colors = ['r', 'y']
 
     # background image
     if img is not None:
         assert img.shape == mask1shape
-        vmax = np.percentile(img, 99.6)
-        ax.imshow(img, vmax=vmax, cmap='gray')
+        vmax = np.percentile(img, 99)
+        vmin = np.percentile(img, 1)
+        ax.imshow(img, vmax=vmax, vmin=vmin, cmap='gray')
     else:
         print()
         bg = np.ones(mask1shape)
