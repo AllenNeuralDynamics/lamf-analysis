@@ -25,6 +25,7 @@ import lamf_analysis.utils as lamf_utils
 from lamf_analysis.code_ocean import (docdb_utils,
                                       s3_utils)
 from lamf_analysis.code_ocean import code_ocean_utils as cou
+from lamf_analysis.ophys import roi_utils
 
 import logging
 logger = logging.getLogger(__name__)
@@ -735,85 +736,18 @@ def get_roi_table_from_plane_path(plane_path, apply_filter=True, small_roi_radiu
     if not os.path.isfile(extraction_fn):
         raise ValueError(f'No extraction file found for {plane_id}')
     pixel_masks = file_handling.load_sparse_array(extraction_fn)
-            
-    roi_table = roi_table_from_mask_arrays(pixel_masks)
+
+    roi_table = roi_utils.roi_table_from_mask_arrays(pixel_masks)
     roi_table = roi_table.rename(columns={'id': 'cell_roi_id'})
 
     if apply_filter:
-        range_y, range_x = lamf_utils.get_motion_correction_crop_xy_range(plane_path)
-
-        session_json = get_session_json_from_plane_path(plane_path)
-        fov_info = session_json['data_streams'][0]['ophys_fovs'][0] # assume this data is the same for all fovs
-        fov_height = fov_info['fov_height']
-        fov_width = fov_info['fov_width']
-        pixel_size_um = get_pixel_size_um(get_raw_path_from_plane_path(plane_path))
-        
-        on_mask = np.zeros((fov_height, fov_width), dtype=bool)
-        on_mask[range_y[0]:range_y[1], range_x[0]:range_x[1]] = True
-        motion_mask = ~on_mask
-
-        def _touching_motion_border(row, motion_mask):
-            if (row.mask_matrix * motion_mask).any():
-                return True
-            else:
-                return False
-
-        roi_table['touching_motion_border'] = roi_table.apply(_touching_motion_border, axis=1, motion_mask=motion_mask)
-        
-        small_roi_radius_threshold_in_pix = small_roi_radius_threshold_in_um / float(pixel_size_um)
-        area_threshold = np.pi * (small_roi_radius_threshold_in_pix**2)
-        
-        roi_table['small_roi'] = roi_table['mask_matrix'].apply(lambda x: len(np.where(x)[0]) < area_threshold)
-        roi_table['valid_roi'] = ~roi_table['touching_motion_border'] & ~roi_table['small_roi']
+        roi_table = roi_utils.apply_filter_to_roi_table(roi_table, plane_path,
+                                              small_roi_radius_threshold_in_um=small_roi_radius_threshold_in_um)
 
     return roi_table
 
 
-def roi_table_from_mask_arrays(pixel_masks: np.ndarray,
-                               index_name: str = 'id'):
-    columns = ['mask_matrix',
-                'height',
-                'width',
-                'x',
-                'y',
-                'centroid',
-                'bounding_box',
-                'valid_roi',
-                'exclusion_labels']
 
-    roi_table = pd.DataFrame(index=range(pixel_masks.shape[0]), columns=columns)
-    for i in range(pixel_masks.shape[0]):
-        roi_mask = pixel_masks[i]
-        roi_table.loc[i, 'mask_matrix'] = roi_mask
-    
-        # find a bounding box around roi
-        non_zero_coords = np.array(np.where(roi_mask > 0))  # Shape (2, N) where N = number of non-zero points
-
-        # Get the bounds of the bounding box
-        min_row, min_col = non_zero_coords.min(axis=1)
-        max_row, max_col = non_zero_coords.max(axis=1)
-
-        # Bounding box coordinates
-        bounding_box = (min_row, min_col, max_row, max_col)
-        height = max_row - min_row
-        width = max_col - min_col
-
-        roi_table.loc[i, 'bounding_box'] = [bounding_box]
-        roi_table.loc[i, 'height'] = height
-        roi_table.loc[i, 'width'] = width
-        roi_table.loc[i, 'x'] = min_col
-        roi_table.loc[i, 'y'] = min_row
-        roi_table.loc[i, 'centroid'] = (min_col + width / 2, min_row + height / 2)
-        
-        # legacy attributes
-        roi_table.loc[i, 'valid_roi'] = True
-        roi_table.loc[i, 'exclusion_labels'] = None
-
-    # reset and rename col
-    roi_table.index.name = index_name
-    roi_table = roi_table.reset_index(drop=False)
-
-    return roi_table
 
 
 def get_session_json_from_plane_path(plane_path):
@@ -984,15 +918,45 @@ def get_intended_depth(plane_path):
     platform_file = next((raw_path / 'pophys').glob('*platform.json'))
     with open(platform_file, 'r') as f:
         platform_info = json.load(f)
+    intended_depth_finds = lamf_utils.find_keys(platform_info, 'intended_depth', exact_match=True)
+    if len(intended_depth_finds) == 0:
+        print(f'No intended depth found in platform info for {plane_path}, returning targeted depth as fallback')
+        return targeted_depth
     targeted_depths = []
     intended_depths = []
     for plane_group in platform_info['imaging_plane_groups']:
         for plane in plane_group['imaging_planes']:
             targeted_depths.append(plane['targeted_depth'])
             intended_depths.append(plane['intended_depth'])
+    if len(np.unique(intended_depths)) != len(intended_depths):
+        print(f'Multiple same intended depth found in platform info for {plane_path}, cannot determine intended depth, returning targeted depth as fallback')
+        return targeted_depth
     matched_ind = targeted_depths.index(targeted_depth)
     intended_depth = intended_depths[matched_ind]
     return intended_depth
+
+
+def get_zdrift_um(plane_path):
+    try:
+        evaluation_path = next((plane_path / 'movie_qc').glob('*_z_drift_evaluation.json'))
+    except StopIteration:
+        print(f"No z-drift evaluation found for {plane_path}")
+        return None
+    with open(evaluation_path) as f:
+        evaluation_data = json.load(f)
+    z_drift_um = lamf_utils.find_keys(evaluation_data, 'z_drift_um', exact_match=True)
+    z_drift_um = z_drift_um[0] if z_drift_um else None
+    return z_drift_um
+
+
+def get_local_zstack_reg(plane_path):
+    local_zstack_reg_file = next(plane_path.glob('*_z_stack_local_reg.h5'), None)
+    if local_zstack_reg_file is None or not local_zstack_reg_file.exists():
+        print(f'Local zstack registration file {local_zstack_reg_file} does not exist, skipping')
+        return None
+    with h5py.File(local_zstack_reg_file, 'r') as f:
+        local_zstack_reg = f['data'][:]
+    return local_zstack_reg
 
 
 def get_power_values(plane_path):

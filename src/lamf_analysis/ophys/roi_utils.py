@@ -7,6 +7,7 @@ from skimage import measure
 from typing import Union, Tuple
 import cv2
 from scipy.sparse import csr_matrix
+import lamf_analysis.utils as lamf_utils
 
 ###################################################################################################
 # I/O
@@ -113,6 +114,109 @@ def roi_bounding_box(roi_mask, pad: int = None):
         w = w + pad * 2
         h = h + pad * 2
     return x, y, w, h
+
+
+###############################################
+## ROI table
+###############################################
+
+def roi_table_from_mask_arrays(pixel_masks: np.ndarray,
+                               index_name: str = 'id'):
+    columns = ['mask_matrix',
+                'height',
+                'width',
+                'x',
+                'y',
+                'centroid',
+                'bounding_box',
+                'valid_roi',
+                'exclusion_labels']
+
+    roi_table = pd.DataFrame(index=range(pixel_masks.shape[0]), columns=columns)
+    for i in range(pixel_masks.shape[0]):
+        roi_mask = pixel_masks[i]
+        roi_table.loc[i, 'mask_matrix'] = roi_mask
+    
+        # find a bounding box around roi
+        non_zero_coords = np.array(np.where(roi_mask > 0))  # Shape (2, N) where N = number of non-zero points
+
+        # Get the bounds of the bounding box
+        min_row, min_col = non_zero_coords.min(axis=1)
+        max_row, max_col = non_zero_coords.max(axis=1)
+
+        # Bounding box coordinates
+        bounding_box = (min_row, min_col, max_row, max_col)
+        height = max_row - min_row
+        width = max_col - min_col
+
+        roi_table.loc[i, 'bounding_box'] = [bounding_box]
+        roi_table.loc[i, 'height'] = height
+        roi_table.loc[i, 'width'] = width
+        roi_table.loc[i, 'x'] = min_col
+        roi_table.loc[i, 'y'] = min_row
+        roi_table.loc[i, 'centroid'] = (min_col + width / 2, min_row + height / 2)
+        
+        # legacy attributes
+        roi_table.loc[i, 'valid_roi'] = True
+        roi_table.loc[i, 'exclusion_labels'] = None
+
+    # reset and rename col
+    roi_table.index.name = index_name
+    roi_table = roi_table.reset_index(drop=False)
+
+    return roi_table
+
+
+def apply_filter_to_roi_table(roi_table, plane_path,
+                              small_roi_radius_threshold_in_um=4,
+                              overwrite=False):
+    from lamf_analysis.code_ocean import capsule_data_utils as cdu
+    if 'touching_motion_border' in roi_table.columns and \
+        'small_roi' in roi_table.columns:
+        if not overwrite:
+            print('Filtering already applied to roi_table, skipping filtering.')
+            return roi_table
+        else:            
+            print('Filtering already applied to roi_table, but overwrite is True, re-applying filtering.')
+
+    roi_table = roi_table.copy()
+
+    # motion border filtering
+    range_y, range_x = lamf_utils.get_motion_correction_crop_xy_range(plane_path)
+
+    session_json = cdu.get_session_json_from_plane_path(plane_path)
+    fov_info = session_json['data_streams'][0]['ophys_fovs'][0] # assume this data is the same for all fovs
+    fov_height = fov_info['fov_height']
+    fov_width = fov_info['fov_width']
+    if 'pixel_size_um' in roi_table.columns:
+        if len(roi_table['pixel_size_um'].unique()) != 1:
+            raise ValueError("Multiple pixel sizes found in roi_table, cannot apply filter.")
+        pixel_size_um = roi_table['pixel_size_um'].values[0]
+    else:
+        pixel_size_um = cdu.get_pixel_size_um(cdu.get_raw_path_from_plane_path(plane_path))
+        roi_table['pixel_size_um'] = pixel_size_um
+    
+    on_mask = np.zeros((fov_height, fov_width), dtype=bool)
+    on_mask[range_y[0]:range_y[1], range_x[0]:range_x[1]] = True
+    motion_mask = ~on_mask
+
+    def _touching_motion_border(row, motion_mask):
+        if (row.mask_matrix * motion_mask).any():
+            return True
+        else:
+            return False
+
+    roi_table['touching_motion_border'] = roi_table.apply(_touching_motion_border, axis=1, motion_mask=motion_mask)
+
+    # size filtering    
+    small_roi_radius_threshold_in_pix = small_roi_radius_threshold_in_um / float(pixel_size_um)
+    area_threshold = np.pi * (small_roi_radius_threshold_in_pix**2)
+    roi_table['small_roi'] = roi_table['mask_matrix'].apply(lambda x: len(np.where(x)[0]) < area_threshold)
+    
+    # applying the filters
+    roi_table['valid_roi'] = ~roi_table['touching_motion_border'] & ~roi_table['small_roi']
+
+    return roi_table
 
 
 ###################################################################################################
@@ -361,7 +465,7 @@ def clean_and_merge_masks(mask_3d1, mask_3d2, ind_remove_from_mask1, ind_remove_
 
 
 def plot_contours_overlap_two_masks(mask1: np.ndarray,
-                                    mask2: np.ndarray,
+                                    mask2: np.ndarray = None,
                                     img: np.ndarray = None,
                                     colors: list = None,
                                     ax=None) -> plt.axes:
@@ -371,7 +475,7 @@ def plot_contours_overlap_two_masks(mask1: np.ndarray,
     ----------
     mask1 : np.ndarray
         mask 1, can be 2D or 3D. If 3D, axis=0 means cell ind (2D shape by mask1.shape[-2:])
-    mask2 : np.ndarray
+    mask2 : np.ndarray, optional
         mask 2, same as in mask 1
     img : np.ndarray, optional
         background image
@@ -385,6 +489,8 @@ def plot_contours_overlap_two_masks(mask1: np.ndarray,
     plt.axes
     """
     # assign mask shapes and ensure 3d shape and shape matching between the masks
+    if mask2 is None:
+        mask2 = np.zeros_like(mask1)
     if len(mask1.shape)==2:
         mask1shape = mask1.shape
         mask2shape = mask2.shape
@@ -425,12 +531,14 @@ def plot_contours_overlap_two_masks(mask1: np.ndarray,
         contour = measure.find_contours(mask1_3d[i, :, :], 0.5)
         ax.plot(contour[0][:, 1], contour[0][:, 0], linewidth=1, color=colors[0],
                 alpha=0.6)
-    for i in range(mask2_3d.shape[0]):
-        contour = measure.find_contours(mask2_3d[i, :, :], 0.5)
-        ax.plot(contour[0][:, 1], contour[0][:, 0], linewidth=1, color=colors[1],
-                alpha=0.6)
+    if mask2_3d.max() > 0:
+        for i in range(mask2_3d.shape[0]):
+            contour = measure.find_contours(mask2_3d[i, :, :], 0.5)
+            ax.plot(contour[0][:, 1], contour[0][:, 0], linewidth=1, color=colors[1],
+                    alpha=0.6)
 
     ax.set_facecolor('white')
+    ax.axis('off')
 
     return ax
 

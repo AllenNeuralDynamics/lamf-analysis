@@ -24,6 +24,8 @@ def find_keys(d, key_substr, exact_match=False, return_unique=True):
         d (dict): The dictionary to search.
         key_substr (str): Substring to match in keys.
         exact_match (bool): If True, only exact key matches are returned.
+        return_unique (bool): If True, only unique values are returned.
+            Works only when exact_match is True and values are hashable (not dicts/lists).
 
     Returns:
     if exact_match is False:
@@ -42,13 +44,17 @@ def find_keys(d, key_substr, exact_match=False, return_unique=True):
             if key_substr in k:
                 keys.append((k, v))            
         if isinstance(v, dict):
-            keys.extend(find_keys(v, key_substr, exact_match=exact_match))
+            keys.extend(find_keys(v, key_substr, exact_match=exact_match, return_unique=return_unique))
         if isinstance(v, list):
             for item in v:
                 if isinstance(item, dict):
-                    keys.extend(find_keys(item, key_substr, exact_match=exact_match))
-    if return_unique:
-        keys = list(set(keys))
+                    keys.extend(find_keys(item, key_substr, exact_match=exact_match, return_unique=return_unique))
+    if (len(keys) > 0) and return_unique:
+        if exact_match:
+            if isinstance(keys[0], dict) or isinstance(keys[0], list):
+                pass # don't try to unique-ify if the values are dicts/lists, since they won't be hashable
+            else:
+                keys = list(set(keys))
     return keys
 
 ####################################################################################################

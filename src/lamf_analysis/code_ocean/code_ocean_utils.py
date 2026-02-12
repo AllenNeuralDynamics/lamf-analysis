@@ -32,8 +32,28 @@ DATE_FORMAT = '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
 def get_co_client():
     domain="https://codeocean.allenneuraldynamics.org/"
     token = os.getenv('API_SECRET')
+    if token is None:
+        token = os.getenv('CUSTOM_KEY')
     client = CodeOcean(domain=domain, token=token)
+    t_or_f, msg = check_co_client_token(client)
+    if not t_or_f:
+        logger.warning(f"CodeOcean client token check failed: {msg}")
     return client
+
+
+def check_co_client_token(client):
+    # Check if the provided CodeOcean client has a valid token by making a test API call.
+    try:
+        params = DataAssetSearchParams(offset=0, limit=1, sort_order='desc',
+                                       sort_field='name', type='dataset',
+                                       archived=False, favorite=False, query='')
+        client.data_assets.search_data_assets(params)
+        return True, "API call succeeded (token accepted)"
+    except Exception as exc:
+        msg = str(exc)
+        if '401' in msg or 'Unauthorized' in msg or '403' in msg:
+            return False, f"authentication failure: {msg}"
+        return False, f"API call failed: {msg}"
 
 
 def get_co_raw_id_from_name(raw_name, client=None):
