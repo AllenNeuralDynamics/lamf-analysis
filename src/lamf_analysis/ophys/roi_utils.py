@@ -8,7 +8,6 @@ from typing import Union, Tuple
 import cv2
 from scipy.sparse import csr_matrix
 import lamf_analysis.utils as lamf_utils
-from lamf_analysis.code_ocean import capsule_data_utils as cdu
 
 ###################################################################################################
 # I/O
@@ -171,6 +170,7 @@ def roi_table_from_mask_arrays(pixel_masks: np.ndarray,
 def apply_filter_to_roi_table(roi_table, plane_path,
                               small_roi_radius_threshold_in_um=4,
                               overwrite=False):
+    from lamf_analysis.code_ocean import capsule_data_utils as cdu
     if 'touching_motion_border' in roi_table.columns and \
         'small_roi' in roi_table.columns:
         if not overwrite:
@@ -189,7 +189,8 @@ def apply_filter_to_roi_table(roi_table, plane_path,
     fov_height = fov_info['fov_height']
     fov_width = fov_info['fov_width']
     if 'pixel_size_um' in roi_table.columns:
-        assert len(roi_table['pixel_size_um'].unique()) == 1, "Multiple pixel sizes found in roi_table, cannot apply filter."
+        if len(roi_table['pixel_size_um'].unique()) != 1:
+            raise ValueError("Multiple pixel sizes found in roi_table, cannot apply filter.")
         pixel_size_um = roi_table['pixel_size_um'].values[0]
     else:
         pixel_size_um = cdu.get_pixel_size_um(cdu.get_raw_path_from_plane_path(plane_path))
@@ -210,14 +211,10 @@ def apply_filter_to_roi_table(roi_table, plane_path,
     # size filtering    
     small_roi_radius_threshold_in_pix = small_roi_radius_threshold_in_um / float(pixel_size_um)
     area_threshold = np.pi * (small_roi_radius_threshold_in_pix**2)
+    roi_table['small_roi'] = roi_table['mask_matrix'].apply(lambda x: len(np.where(x)[0]) < area_threshold)
     
-    roi_table['small_roi'] = roi_table['mask_matrix'].apply(lambda x: len(np.where(x)[0]) < area_threshold)
+    # applying the filters
     roi_table['valid_roi'] = ~roi_table['touching_motion_border'] & ~roi_table['small_roi']
-    small_roi_radius_threshold_in_pix = small_roi_radius_threshold_in_um / float(pixel_size_um)
-    area_threshold = np.pi * (small_roi_radius_threshold_in_pix**2)
-    roi_table['small_roi'] = roi_table['mask_matrix'].apply(lambda x: len(np.where(x)[0]) < area_threshold)
-    roi_table['valid_roi'] = ~roi_table['touching_motion_border'] & ~roi_table['small_roi']
-
 
     return roi_table
 

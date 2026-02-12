@@ -24,6 +24,8 @@ def find_keys(d, key_substr, exact_match=False, return_unique=True):
         d (dict): The dictionary to search.
         key_substr (str): Substring to match in keys.
         exact_match (bool): If True, only exact key matches are returned.
+        return_unique (bool): If True, only unique values are returned.
+            Works only when exact_match is True and values are hashable (not dicts/lists).
 
     Returns:
     if exact_match is False:
