@@ -189,12 +189,33 @@ def get_local_zstack_filepath(plane_path):
     local_zstack_path = next(plane_path.rglob(f'*_z_stack_local.h5'), None)
     if local_zstack_path is None:        
         print(f"h5 z-stack file not found in {plane_path}")
-        print(f"Looking for tiff z-stack file instead...")
+        print(f'Looking for h5 z-stack file in the raw path.')
         raw_path = cdu.get_raw_path_from_plane_path(plane_path)
-        local_zstack_path = next(raw_path.rglob(f'*_local_z_stack*.tiff'), None)
-        if local_zstack_path is None:
-            raise FileNotFoundError(f"Z-stack file not found in {plane_path}")
+        plane_id = plane_path.name
+        local_zstack_paths = list(raw_path.rglob(f'*_z_stack_local.h5'))
+        if len(local_zstack_paths) == 0:
+            print(f"h5 z-stack file not found in {raw_path}")
+            print(f"Looking for tiff z-stack file instead...")
+            raw_path = cdu.get_raw_path_from_plane_path(plane_path)
+            local_zstack_path = next(raw_path.rglob(f'*_local_z_stack*.tiff'), None)
+            if local_zstack_path is None:
+                raise FileNotFoundError(f"Z-stack file not found in {plane_path}")
+            else:
+                return local_zstack_path
         else:
+            # find the one with the plane_id in the name
+            # if not, use the first one
+            local_zstack_path = None
+            for p in local_zstack_paths:
+                if plane_id in p.name:
+                    print(f"Found local z-stack file {p} matching plane_id {plane_id}")
+                    local_zstack_path = p
+                    break
+            if local_zstack_path is None:
+                print(f"No local z-stack file with plane_id {plane_id} found.")
+                print(f"List of candidate local z-stack files: {local_zstack_paths}")
+                print(f"Using the first one: {local_zstack_paths[0]}")
+                local_zstack_path = local_zstack_paths[0]
             return local_zstack_path
     else:
         return local_zstack_path
