@@ -747,7 +747,18 @@ def get_roi_table_from_plane_path(plane_path, apply_filter=True, small_roi_radiu
     return roi_table
 
 
-
+def get_session_json_from_processed_path(processed_path):
+    if isinstance(processed_path, str):
+        plane_path = Path(processed_path)
+    try:
+        session_json_fn = next(processed_path.rglob('*session.json'))
+    except StopIteration:
+        session_name = processed_path.name.split('_processed')[0]
+        raw_path = processed_path.parent / session_name
+        session_json_fn = raw_path / 'session.json'
+    with open(session_json_fn) as f:
+        session_json = json.load(f)
+    return session_json
 
 
 def get_session_json_from_plane_path(plane_path):
@@ -757,14 +768,7 @@ def get_session_json_from_plane_path(plane_path):
         plane_path = Path(plane_path)
     if not os.path.isdir(plane_path):
         raise ValueError(f'Path not found ({plane_path})')
-    try:
-        session_json_fn = next(plane_path.parent.rglob('*session.json'))
-    except StopIteration:
-        session_name = plane_path.parent.name.split('_processed')[0]
-        raw_path = plane_path.parent.parent / session_name
-        session_json_fn = raw_path / 'session.json'
-    with open(session_json_fn) as f:
-        session_json = json.load(f)
+    session_json = get_session_json_from_processed_path(plane_path.parent)
     return session_json
 
 
@@ -948,6 +952,13 @@ def get_zdrift_um(plane_path):
     z_drift_um = z_drift_um[0] if z_drift_um else None
     return z_drift_um
 
+
+def get_plane_ids_from_processed_path(processed_path):
+    session_json = get_session_json_from_processed_path(processed_path)
+    fov_metadata = session_json['data_streams'][0]['ophys_fovs']
+    plane_ids = [f'{fov["targeted_structure"]}_{fov["index"]}' for fov in fov_metadata]
+    return plane_ids
+    
 
 def get_local_zstack_reg(plane_path):
     local_zstack_reg_file = next(plane_path.glob('*_z_stack_local_reg.h5'), None)
