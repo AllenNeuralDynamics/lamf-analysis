@@ -469,8 +469,8 @@ def plot_contours_overlap_two_masks(mask1: np.ndarray,
                                     img: np.ndarray = None,
                                     colors: list = None,
                                     ax=None,
-                                    line_width: int = 1,
-                                    alpha: float = 0.6) -> plt.axes:
+                                    line_widths: Union[list, float] = 1.0,
+                                    alphas: Union[list, float] = 0.6) -> plt.axes:
     """Given two masks, plot the contours of the masks on an image
 
     Parameters
@@ -529,17 +529,26 @@ def plot_contours_overlap_two_masks(mask1: np.ndarray,
         bg = np.ones(mask1shape)
         ax.imshow(bg, cmap='gray', vmin=0, vmax=1)
 
+    if isinstance(line_widths, float) or isinstance(line_widths, int):
+        line_widths = [line_widths, line_widths]
+    if isinstance(alphas, float) or isinstance(alphas, int):
+        alphas = [alphas, alphas]
+
     # Plot contours
     for i in range(mask1_3d.shape[0]):
         contour = measure.find_contours(mask1_3d[i, :, :], 0.5)
-        ax.plot(contour[0][:, 1], contour[0][:, 0], linewidth=line_width, color=colors[0],
-                alpha=alpha)
+        lw = line_widths[0]
+        a = alphas[0]
+        ax.plot(contour[0][:, 1], contour[0][:, 0], linewidth=lw, color=colors[0],
+                alpha=a)
     if len(mask2_3d) > 0:
         if mask2_3d.max() > 0:
             for i in range(mask2_3d.shape[0]):
                 contour = measure.find_contours(mask2_3d[i, :, :], 0.5)
-                ax.plot(contour[0][:, 1], contour[0][:, 0], linewidth=line_width, color=colors[1],
-                        alpha=alpha)
+                lw = line_widths[1]
+                a = alphas[1]
+                ax.plot(contour[0][:, 1], contour[0][:, 0], linewidth=lw, color=colors[1],
+                        alpha=a)
 
     ax.set_facecolor('white')
     ax.axis('off')
