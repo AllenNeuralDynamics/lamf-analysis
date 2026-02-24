@@ -229,7 +229,7 @@ def reorder_mask_im(mask_im):
     '''
     assert len(mask_im.shape) == 2
     if len(np.unique(mask_im)) - 1 != mask_im.max():
-        old_ids = np.setdiff1d(mask_im.unique(), 0)
+        old_ids = np.setdiff1d(np.unique(mask_im), 0)
         new_mask_im = np.zeros(mask_im.shape)
         for i, old_id in enumerate(old_ids):
             id_pix = np.where(mask_im == old_id)
@@ -521,8 +521,9 @@ def plot_contours_overlap_two_masks(mask1: np.ndarray,
     # background image
     if img is not None:
         assert img.shape == mask1shape
-        vmax = np.percentile(img, 99)
-        vmin = np.percentile(img, 1)
+        img_pos_vals = img[img > 0]
+        vmax = np.percentile(img_pos_vals, 99)
+        vmin = np.percentile(img_pos_vals, 1)
         ax.imshow(img, vmax=vmax, vmin=vmin, cmap='gray')
     else:
         print()
