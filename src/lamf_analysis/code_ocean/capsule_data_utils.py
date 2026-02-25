@@ -953,6 +953,19 @@ def get_zdrift_um(plane_path):
     return z_drift_um
 
 
+def get_zdrift_matched_plane_indices(plane_path):
+    try:
+        evaluation_path = next((plane_path / 'movie_qc').glob('*_z_drift_evaluation.json'))
+    except StopIteration:
+        print(f"No z-drift evaluation found for {plane_path}")
+        return None
+    with open(evaluation_path) as f:
+        evaluation_data = json.load(f)
+    matched_plane_indices = lamf_utils.find_keys(evaluation_data, 'matched_plane_indices', exact_match=True)
+    matched_plane_indices = matched_plane_indices[0] if matched_plane_indices else None
+    return matched_plane_indices
+
+
 def get_plane_ids_from_processed_path(processed_path):
     session_json = get_session_json_from_processed_path(processed_path)
     fov_metadata = session_json['data_streams'][0]['ophys_fovs']
