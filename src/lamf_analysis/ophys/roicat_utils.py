@@ -1,9 +1,10 @@
 from pathlib import Path
 from roicat import util
 import pandas as pd
+import numpy as np
 
 
-def load_roicat_data(path):
+def load_roicat_tracking_data(path):
     r = util.RichFile_ROICaT(path=path)
 
     try:
@@ -41,8 +42,11 @@ def load_roicat_data(path):
     return results
 
 
-def get_alignment_template_to_all(results):
-    return results['aligner']['results_geometric']['final']['alignment_template_to_all']
+def get_alignment_template_to_all(roicat_plane_path):
+    aligner_path = Path(roicat_plane_path) / 'tracking.run_data.richfile/aligner.dict_item'
+    r = util.RichFile_ROICaT(path=aligner_path)
+    values = r.load().value
+    return values['results_geometric']['final']['alignment_template_to_all']
 
 
 def load_roicat_results(roicat_plane_path):
@@ -54,3 +58,15 @@ def load_roicat_results(roicat_plane_path):
 def get_session_name_order(data_path):
     results_df = load_roicat_results(data_path)
     return results_df.session_name.unique()
+
+
+def alignment_failed_session_names(roicat_plane_path):
+    roicat_plane_path = Path(roicat_plane_path)
+    session_names = get_session_name_order(roicat_plane_path)
+    alignment_successful = np.array(get_alignment_template_to_all(roicat_plane_path))
+    failed_session_names = []
+    failed_inds = np.where(alignment_successful == False)[0]
+    if len(failed_inds) > 0:
+        for ind in failed_inds:
+            failed_session_names.append(session_names[ind])
+    return failed_session_names
