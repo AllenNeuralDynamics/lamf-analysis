@@ -24,8 +24,7 @@ aind-data-schema-models
 aind-session
 boto3
 botocore
-brain-observatory-utilities
-codeocean
+codeocean==0.14.0
 optuna
 PyYAML
 requests
