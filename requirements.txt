@@ -25,9 +25,10 @@ aind-session
 boto3
 botocore
 codeocean==0.14.0
-optuna
+s3fs
 PyYAML
 requests
 roicat
-s3fs
 richfile
+hdbscan
+optuna
