@@ -30,3 +30,4 @@ PyYAML
 requests
 roicat
 s3fs
+richfile
