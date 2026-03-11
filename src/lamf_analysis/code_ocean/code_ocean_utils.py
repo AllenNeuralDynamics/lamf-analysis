@@ -7,6 +7,7 @@ import glob
 from pathlib import Path
 import h5py
 import time
+import requests
 
 from codeocean import CodeOcean
 from codeocean.data_asset import (DataAssetSearchParams,
@@ -169,15 +170,19 @@ def get_mouse_sessions_by_filters(subject_id, data_name='multiplane-ophys',
 def get_derived_assets_df(subject_id, process_name,
                        data_name='multiplane-ophys',
                        offset=0, limit=1000,
-                       add_s3_location=True):
+                       processing_parameters=None,
+                       add_s3_location=False):    
     results = get_derived_assets(subject_id, process_name,
                                 data_name=data_name,
-                                offset=offset, limit=limit)
+                                offset=offset, limit=limit,
+                                processing_parameters=processing_parameters)
     
+    process_name_lower = process_name.lower()
     derived_asset_rows = []
     for res in results:
         name = res.name
-        raw_asset_name = name.split(process_name)[0].rstrip('_')
+        name_lower = name.lower()
+        raw_asset_name = name_lower.split(process_name_lower)[0].rstrip('_')
         if data_name != '':
             session_name = '_'.join(raw_asset_name.split('_')[1:3])
         else:
@@ -203,7 +208,8 @@ def get_derived_assets_df(subject_id, process_name,
 
 def get_derived_assets(subject_id, process_name,
                        data_name='multiplane-ophys',
-                       offset=0, limit=1000):
+                       offset=0, limit=1000,
+                       processing_parameters=None):
     client = get_co_client()
     tags = ['derived', process_name]
     results = []
@@ -212,11 +218,32 @@ def get_derived_assets(subject_id, process_name,
                                                   data_name=data_name, tags=tags,
                                                   offset=offset, limit=limit)
         data_asset_search_results = client.data_assets.search_data_assets(data_asset_params)
-        results.extend(data_asset_search_results.results)
+        if processing_parameters is not None:
+            for r in data_asset_search_results.results:
+                data_asset_id = r.id
+                parameters = get_processing_parameters(data_asset_id)
+                if parameters is not None:
+                    check_parameter_list = [val == parameters.get(key) for key, val in processing_parameters.items()]
+                    if np.all(check_parameter_list):
+                        results.append(r)
+        else:
+            results.extend(data_asset_search_results.results)
         if not data_asset_search_results.has_more:
             break
         data_asset_params.offset += data_asset_params.limit
     return results
+
+
+def get_processing_parameters(data_asset_id, processing_json_path='processing.json'):
+    client = get_co_client()
+    try:
+        url = client.data_assets.get_data_asset_file_urls(data_asset_id, path=processing_json_path).download_url
+        assert url is not None
+        parameters = requests.get(url).json()['processing_pipeline']['data_processes'][0]['parameters']
+        return parameters
+    except:
+        print('Cannot get processing parameters')
+        return None
 
 
 def get_hcr_processed_data_assets(subject_id,
