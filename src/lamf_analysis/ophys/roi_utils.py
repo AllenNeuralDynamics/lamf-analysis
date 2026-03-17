@@ -1,3 +1,8 @@
+import os
+from pathlib import Path
+import h5py
+import sparse
+
 import tifffile as tif
 import numpy as np
 import matplotlib.pyplot as plt
@@ -216,6 +221,32 @@ def apply_filter_to_roi_table(roi_table, plane_path,
     # applying the filters
     roi_table['valid_roi'] = ~roi_table['touching_motion_border'] & ~roi_table['small_roi']
 
+    return roi_table
+
+
+def append_neuropil_masks_to_roi_table(roi_table, plane_path):
+    if isinstance(plane_path, str):
+        plane_path = Path(plane_path)
+    plane_id = plane_path.name
+    extraction_path = plane_path / 'extraction'
+    extraction_fn = extraction_path / f'{plane_id}_extraction.h5'
+    if not os.path.isfile(extraction_fn):
+        extraction_fn = extraction_path / 'extraction.h5'
+    if not os.path.isfile(extraction_fn):
+        raise ValueError(f'No extraction file found for {plane_id}')
+
+    with h5py.File(extraction_fn, 'r') as f:
+        np_coords = f['rois']['neuropil_coords'][:]
+        soma_coords = f['rois']['coords'][:]
+        soma_data = f['rois']['data'][:]
+        shape = f['rois']['shape'][:]
+    assert len(soma_data) == soma_coords.shape[1]
+    np_data = np.ones(np_coords.shape[1])
+
+    soma_pixelmasks = sparse.COO(soma_coords,soma_data,shape).todense()
+    np_pixelmasks = sparse.COO(np_coords,np_data,shape).todense()
+    assert (np.stack(roi_table.mask_matrix.values) == soma_pixelmasks).all()
+    roi_table['np_mask'] = list(np_pixelmasks)
     return roi_table
 
 
