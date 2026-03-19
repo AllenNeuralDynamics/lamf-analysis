@@ -198,7 +198,17 @@ def apply_filter_to_roi_table(roi_table, plane_path,
             raise ValueError("Multiple pixel sizes found in roi_table, cannot apply filter.")
         pixel_size_um = roi_table['pixel_size_um'].values[0]
     else:
-        pixel_size_um = cdu.get_pixel_size_um(cdu.get_raw_path_from_plane_path(plane_path))
+        try:
+            pixel_size_um = cdu.get_pixel_size_um(cdu.get_raw_path_from_plane_path(plane_path))
+        except Exception as e:
+            print(f"Error getting pixel size from the raw path: {e}")
+            print(f"Trying session.json")
+            try:
+                pixel_size_um = cdu.get_pixel_size_um_from_plane_path(plane_path)
+            except Exception as e:
+                print(f"Error getting pixel size from session.json: {e}")
+                print(f"Set to default value of 0.78 um/pixel")
+                pixel_size_um = 0.78
         roi_table['pixel_size_um'] = pixel_size_um
     
     on_mask = np.zeros((fov_height, fov_width), dtype=bool)

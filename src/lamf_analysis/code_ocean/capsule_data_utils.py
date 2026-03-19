@@ -849,6 +849,12 @@ def get_pixel_size_um(raw_path):
     return pixel_size_um
 
 
+def get_pixel_size_um_from_plane_path(plane_path):
+    session_json = get_session_json_from_plane_path(plane_path)
+    pixel_size_um = float(lamf_utils.find_keys(session_json, 'fov_scale_factor', exact_match=True)[0])
+    return pixel_size_um
+
+
 def get_raw_path_from_plane_path(plane_path):
     ''' Get raw path from plane path
     assuming there are both in the same data directory
