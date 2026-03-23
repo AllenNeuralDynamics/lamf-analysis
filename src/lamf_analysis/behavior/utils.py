@@ -81,3 +81,21 @@ def get_running_epochs(
         if (end_time - start_time) >= duration_threshold_in_s:
             epochs.append((start_time, end_time))
     return epochs
+
+
+# Plotting utilities
+def plot_running_speed_with_epochs(bsd, epoch='stationary', color='orange', ax=None):
+    import matplotlib.pyplot as plt
+    ts = bsd.running_speed.timestamps
+    spd = bsd.running_speed.speed
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(12, 4))
+    ax.plot(ts, spd, label='Running Speed (cm/s)')
+
+    epochs = get_running_epochs(bsd, behavior_type=epoch)
+    for start_time, end_time in epochs:
+        m = (ts >= start_time) & (ts <= end_time)
+        ax.plot(ts[m], spd[m], color=color)
+    ax.set_xlabel('Time (s)')
+    ax.set_ylabel('Running Speed (cm/s)')
+    return ax
