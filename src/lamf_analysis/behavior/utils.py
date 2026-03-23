@@ -1,5 +1,12 @@
 import numpy as np
 
+
+''' To get BehaviorSessionDataset object
+from comb.behavior_session_dataset import BehaviorSessionDataset
+raw_data_dir = '/root/capsule/data/multiplane-ophys_687000_2023-09-26_08-56-32'
+bsd = BehaviorSessionDataset(raw_data_dir)
+'''
+
 ## About running
 def total_run_distance(bsd):
     ''' Calculate total run distance from BehaviorSessionDataset object
