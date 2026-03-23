@@ -20,7 +20,7 @@ def total_run_distance(bsd):
 def process_running_speed(bsd,
                           mean_window_size: float = 2.0, # seconds
                           std_window_size: float = 1.0, # seconds
-                          run_threshold: float = 5.0,  # speed threshold for running
+                          run_threshold: float = 2.0,  # speed threshold for running
                           jitter_threshold: float = 0.5,  # std threshold for jittering
                           ):
     running_df = bsd.running_speed
