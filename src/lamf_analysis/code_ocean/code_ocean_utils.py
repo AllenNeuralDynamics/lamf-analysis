@@ -8,6 +8,7 @@ from pathlib import Path
 import h5py
 import time
 import requests
+from typing import Union
 
 from codeocean import CodeOcean
 from codeocean.data_asset import (DataAssetSearchParams,
@@ -56,6 +57,35 @@ def check_co_client_token(client):
             return False, f"authentication failure: {msg}"
         return False, f"API call failed: {msg}"
 
+
+def get_data_asset_id_from_name(asset_name,
+                                data_type: str = Union['raw', 'derived'],
+                                client=None):
+    ''' Get data asset ID from CodeOcean by name
+    example:
+        asset_name = '1299958728_2022-03-15_13-28-02_multiplane-ophys_raw'
+        asset_id = get_data_asset_id_from_name(asset_name)
+    '''
+    if client is None:
+        client = get_co_client()
+    assert data_type in ['raw', 'derived'], f"Invalid data_type '{data_type}', expected 'raw' or 'derived'"
+    search_type = 'dataset' if data_type == 'raw' else 'result'
+    data_asset_params = DataAssetSearchParams(
+        offset=0,
+        limit=None,
+        sort_order="desc",
+        sort_field="created",
+        type=search_type,
+        archived=False,
+        favorite=False,
+        query=asset_name,
+    )
+    results = client.data_assets.search_data_assets(data_asset_params).results
+    if len(results) == 0:
+        raise ValueError(f"No {data_type} asset found matching name '{asset_name}'")
+    elif len(results) > 1:
+        print(f"Warning: multiple {data_type} assets found matching name '{asset_name}', returning newest match")
+    return results[0].id
 
 def get_co_raw_id_from_name(raw_name, client=None):
     ''' Get raw data asset ID from CodeOcean by name
