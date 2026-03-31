@@ -980,7 +980,7 @@ def get_plane_ids_from_processed_path(processed_path):
     
 
 def get_local_zstack_reg(plane_path):
-    local_zstack_reg_file = next(plane_path.glob('*_z_stack_local_reg.h5'), None)
+    local_zstack_reg_file = next(plane_path.rglob('*_z_stack_local_reg.h5'), None)
     if local_zstack_reg_file is None or not local_zstack_reg_file.exists():
         print(f'Local zstack registration file {local_zstack_reg_file} does not exist, skipping')
         return None
