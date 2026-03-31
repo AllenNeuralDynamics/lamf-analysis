@@ -28,6 +28,103 @@ import lamf_analysis.ophys.zstack as zstack
 # Session to session matching by using zstack to zstack registration (implemented in a different file) 
 ###############################################################
 
+
+def get_one_minute_mean_fovs(data, frame_rate, threshold_sec=30):
+    """Compute approximately one-minute mean FOVs from a movie."""
+    if data.ndim != 3:
+        raise ValueError(f"Expected movie with shape (T, Y, X), got {data.shape}")
+    if frame_rate <= 0:
+        raise ValueError(f"frame_rate must be > 0, got {frame_rate}")
+
+    num_frames, ny, nx = data.shape
+    one_minute_frames = max(1, int(round(frame_rate * 60)))
+    last_minute_threshold = frame_rate * threshold_sec
+    dividers = np.arange(0, num_frames, one_minute_frames, dtype=int)
+
+    if dividers.size == 0:
+        dividers = np.array([0], dtype=int)
+    if dividers[-1] != num_frames:
+        trailing_frames = num_frames - dividers[-1]
+        if trailing_frames < last_minute_threshold and dividers.size > 1:
+            dividers[-1] = num_frames
+        else:
+            dividers = np.append(dividers, num_frames)
+    elif dividers.size == 1:
+        dividers = np.append(dividers, num_frames)
+
+    emf = np.zeros((len(dividers) - 1, ny, nx), dtype=np.float32)
+    for i in range(len(dividers) - 1):
+        emf[i, :, :] = np.mean(data[dividers[i]:dividers[i + 1], :, :], axis=0)
+    return emf
+
+
+def _register_episodic_mean_fovs_to_stack(
+    ref_zstack_crop,
+    episodic_mean_fovs_crop,
+    use_clahe=True,
+    use_valid_pix=True,
+):
+    """Register episodic mean FOVs to a z-stack and collect diagnostics."""
+    stack_pre = med_filt_z_stack(ref_zstack_crop)
+    stack_pre = rolling_average_stack(stack_pre)
+
+    matched_plane_indices = np.zeros(episodic_mean_fovs_crop.shape[0], dtype=int)
+    corrcoef = []
+    segment_reg_imgs = []
+    shift_list = []
+    for i in range(episodic_mean_fovs_crop.shape[0]):
+        fov_reg_stack, cc, shift = fov_stack_register_phase_correlation(
+            episodic_mean_fovs_crop[i], stack_pre, use_clahe=use_clahe,
+            use_valid_pix=use_valid_pix)
+        matched_plane_indices[i] = int(np.argmax(cc))
+        corrcoef.append(cc)
+        segment_reg_imgs.append(fov_reg_stack[matched_plane_indices[i]])
+        shift_list.append(shift)
+    return matched_plane_indices, np.asarray(corrcoef), segment_reg_imgs, shift_list
+
+
+def get_matched_plane_indices(ref_zstack_crop,
+                              episodic_mean_fovs_crop,
+                              use_clahe=True,
+                              use_valid_pix=True):
+    """Return matched z-plane indices for episodic mean FOVs."""
+    matched_plane_indices, _corrcoef, _segment_reg_imgs, _shift_list = \
+        _register_episodic_mean_fovs_to_stack(
+            ref_zstack_crop,
+            episodic_mean_fovs_crop,
+            use_clahe=use_clahe,
+            use_valid_pix=use_valid_pix)
+    return matched_plane_indices
+
+
+def calculate_zdrift_from_images(ref_zstack_crop,
+                                 episodic_mean_fovs_crop,
+                                 number_of_z_planes,
+                                 z_step,
+                                 use_clahe=True,
+                                 use_valid_pix=True):
+    """Calculate temp.py-style z-drift metrics from cropped images."""
+    matched_plane_indices, corrcoef, _segment_reg_imgs, shift_list = \
+        _register_episodic_mean_fovs_to_stack(
+            ref_zstack_crop,
+            episodic_mean_fovs_crop,
+            use_clahe=use_clahe,
+            use_valid_pix=use_valid_pix)
+
+    center_z = number_of_z_planes // 2
+    zdrift_um_each = z_step * (matched_plane_indices - center_z)
+    total_zdrift_um = float(abs(np.max(zdrift_um_each) - np.min(zdrift_um_each)))
+
+    return {
+        'z_drift_um': total_zdrift_um,
+        'zdrift_um_each': zdrift_um_each.tolist(),
+        'matched_plane_indices': matched_plane_indices,
+        'corrcoef': corrcoef,
+        'shift': shift_list,
+        'use_clahe': use_clahe,
+        'use_valid_pix': use_valid_pix,
+    }
+
 def zdrift_for_session_planes(raw_path: Union[Path, str],
                               parallel: bool = True,
                               n_processes: int = None,
@@ -169,25 +266,12 @@ def _calc_zdrift_from_images(ref_zstack_crop, episodic_mean_fovs_crop,
     Temporary exposure to work with custom data structure
     """
 
-    # Get preprocessed z-stack
-    stack_pre = med_filt_z_stack(ref_zstack_crop)
-    stack_pre = rolling_average_stack(stack_pre)
-
-    # Run registration for each episodic mean FOVs
-    matched_plane_indices = np.zeros(
-        episodic_mean_fovs_crop.shape[0], dtype=int)
-    corrcoef = []
-    segment_reg_imgs = []
-    shift_list = []
-    for i in range(episodic_mean_fovs_crop.shape[0]):
-        fov_reg_stack, cc, shift = fov_stack_register_phase_correlation(
-            episodic_mean_fovs_crop[i], stack_pre, use_clahe=use_clahe,
+    matched_plane_indices, corrcoef, segment_reg_imgs, shift_list = \
+        _register_episodic_mean_fovs_to_stack(
+            ref_zstack_crop,
+            episodic_mean_fovs_crop,
+            use_clahe=use_clahe,
             use_valid_pix=use_valid_pix)
-        matched_plane_indices[i] = np.argmax(cc)
-        corrcoef.append(cc)
-        segment_reg_imgs.append(fov_reg_stack[np.argmax(cc)])
-        shift_list.append(shift)
-    corrcoef = np.asarray(corrcoef)
 
     center_z = number_of_z_planes // 2
     zdrift_um = z_step * (matched_plane_indices - center_z)
