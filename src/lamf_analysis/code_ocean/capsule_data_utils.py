@@ -980,7 +980,10 @@ def get_zdrift_matched_plane_indices(plane_path):
 def get_plane_ids_from_processed_path(processed_path):
     session_json = get_session_json_from_processed_path(processed_path)
     fov_metadata = session_json['data_streams'][0]['ophys_fovs']
-    plane_ids = [f'{fov["targeted_structure"]}_{fov["index"]}' for fov in fov_metadata]
+    if isinstance(fov_metadata[0]['targeted_structure'], dict):
+        plane_ids = [f'{fov["targeted_structure"]["acronym"]}_{fov["index"]}' for fov in fov_metadata]
+    else:
+        plane_ids = [f'{fov["targeted_structure"]}_{fov["index"]}' for fov in fov_metadata]
     return plane_ids
     
 
