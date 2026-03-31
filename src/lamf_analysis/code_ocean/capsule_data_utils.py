@@ -317,6 +317,11 @@ def attach_data_assets_with_repeats(mouse_df_to_attach, data_dir=Path('/root/cap
     return False
 
 
+def get_session_key_from_raw_name(raw_name):
+    session_key = '_'.join(raw_name.split('_')[1:3])
+    return session_key
+
+
 def get_session_info(subject_id, data_dir='/root/capsule/data'):
     ''' Get all raw data paths in the data directory
     '''
