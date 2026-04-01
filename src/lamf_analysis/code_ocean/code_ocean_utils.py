@@ -239,6 +239,7 @@ def get_derived_assets_df(subject_id, process_name,
 def get_derived_assets(subject_id, process_name,
                        data_name='multiplane-ophys',
                        offset=0, limit=1000,
+                       subprocessing_name=None,
                        processing_parameters=None):
     client = get_co_client()
     tags = ['derived', process_name]
@@ -249,9 +250,10 @@ def get_derived_assets(subject_id, process_name,
                                                   offset=offset, limit=limit)
         data_asset_search_results = client.data_assets.search_data_assets(data_asset_params)
         if processing_parameters is not None:
+            assert subprocessing_name is not None, "Must specify subprocessing_name when filtering by processing_parameters"
             for r in data_asset_search_results.results:
                 data_asset_id = r.id
-                parameters = get_processing_parameters(data_asset_id)
+                parameters = get_process_parameters(data_asset_id, subprocessing_name)
                 if parameters is not None:
                     check_parameter_list = [val == parameters.get(key) for key, val in processing_parameters.items()]
                     if np.all(check_parameter_list):
@@ -264,16 +266,47 @@ def get_derived_assets(subject_id, process_name,
     return results
 
 
-def get_processing_parameters(data_asset_id, processing_json_path='processing.json'):
+def get_process_parameters(data_asset_id, process_name, processing_json_path='processing.json'):
     client = get_co_client()
     try:
         url = client.data_assets.get_data_asset_file_urls(data_asset_id, path=processing_json_path).download_url
         assert url is not None
-        parameters = requests.get(url).json()['processing_pipeline']['data_processes'][0]['parameters']
+        processes = requests.get(url).json()['processing_pipeline']['data_processes']
+        process_names = [p.get("name", None) for p in processes]        
+        if process_name in process_names:
+            process_ind = process_names.index(process_name)        
+            parameters = processes[process_ind].get('parameters', None)
+        else:
+            print(f"Process name '{process_name}' not found in processing pipeline for data asset '{data_asset_id}'")
+            parameters = None
         return parameters
     except:
         print('Cannot get processing parameters')
         return None
+
+
+def check_process_names(data_asset_id, processing_json_path='processing.json'):
+    client = get_co_client()
+    try:
+        url = client.data_assets.get_data_asset_file_urls(data_asset_id, path=processing_json_path).download_url
+        assert url is not None
+        process_names = [p.get("name", None) for p in requests.get(url).json()['processing_pipeline']['data_processes']]
+        return process_names
+    except:
+        print('Cannot get processing parameters')
+        return None
+
+
+# def get_processing_parameters(data_asset_id, processing_json_path='processing.json'):
+#     client = get_co_client()
+#     try:
+#         url = client.data_assets.get_data_asset_file_urls(data_asset_id, path=processing_json_path).download_url
+#         assert url is not None
+#         parameters = requests.get(url).json()['processing_pipeline']['data_processes'][0]['parameters']
+#         return parameters
+#     except:
+#         print('Cannot get processing parameters')
+#         return None
 
 
 def get_hcr_processed_data_assets(subject_id,
