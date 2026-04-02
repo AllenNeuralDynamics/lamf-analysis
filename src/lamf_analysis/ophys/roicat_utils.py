@@ -1,10 +1,10 @@
 from pathlib import Path
-from roicat import util
 import pandas as pd
 import numpy as np
 
-
+# requires tkinter which depends on libX11.so.6
 def load_roicat_tracking_data(path):
+    from roicat import util
     r = util.RichFile_ROICaT(path=path)
 
     try:
