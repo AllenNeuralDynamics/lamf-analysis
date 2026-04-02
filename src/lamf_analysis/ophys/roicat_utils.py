@@ -49,14 +49,29 @@ def get_alignment_template_to_all(roicat_plane_path):
     return values['results_geometric']['final']['alignment_template_to_all']
 
 
-def load_roicat_results(roicat_plane_path):
+def load_roicat_results(roicat_path):
+    # get all names of subfolders in roicat_path
+    roicat_path = Path(roicat_path)
+    plane_folders = [f for f in roicat_path.iterdir() if f.is_dir()]
+    if len(plane_folders) == 0:
+        raise ValueError(f"No plane folders found in {roicat_path}")
+    results_dfs = []
+    for plane_folder in plane_folders:
+        results_df = load_roicat_plane_results(plane_folder)
+        results_dfs.append(results_df)
+    combined_results_df = pd.concat(results_dfs, ignore_index=True)
+    return combined_results_df
+
+
+def load_roicat_plane_results(roicat_plane_path):
     results_fn = Path(roicat_plane_path) / 'ROICaT.tracking.results.csv'
     assert results_fn.is_file(), f"Results file not found: {results_fn}"
     results_df = pd.read_csv(results_fn)
     return results_df
 
-def get_session_name_order(data_path):
-    results_df = load_roicat_results(data_path)
+
+def get_session_name_order(roicat_plane_path):
+    results_df = load_roicat_plane_results(roicat_plane_path)
     return results_df.session_name.unique()
 
 
