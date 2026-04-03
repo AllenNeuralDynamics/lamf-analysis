@@ -7,6 +7,7 @@ import glob
 from pathlib import Path
 import h5py
 import time
+from datetime import datetime, timezone
 import requests
 from typing import Union
 
@@ -219,17 +220,24 @@ def get_derived_assets_df(subject_id, process_name,
             session_name = '_'.join(raw_asset_name.split('_')[0:2])
         if str(subject_id) != session_name.split('_')[0]:
             raise ValueError(f"Subject ID mismatch in asset '{name}': expected {subject_id}, found {session_name.split('_')[0]}")
+        ts = res.created
+        dt_utc = datetime.fromtimestamp(ts, tz=timezone.utc)
+        s = dt_utc.strftime("%Y-%m-%d_%H-%M-%S")
         derived_asset_rows.append({
             'derived_asset_id': res.id,
             'derived_asset_name': name,
             'raw_asset_name': raw_asset_name,
             'session_name': session_name,
+            'derived_date': s.split('_')[0],
+            'derived_time': s.split('_')[1],
         })
     derived_asset_df = pd.DataFrame(derived_asset_rows,
                                     columns=['derived_asset_id',
                                             'derived_asset_name',
                                             'raw_asset_name',
-                                            'session_name'])
+                                            'session_name',
+                                            'derived_date',
+                                            'derived_time'])
     if add_s3_location:
         derived_asset_df['s3_path'] = derived_asset_df['derived_asset_id'].apply(
             aind_session.utils.get_source_dir_by_name)
@@ -396,3 +404,71 @@ def attach_assets(assets: list, co_client=None):
         else:
             print(f"asset_id: {target_id} - not found in CodeOcean API response")
     return
+
+
+def archive_data_assets(asset_ids, archive=True, dry_run=False, co_client=None):
+    """Archive or unarchive one or more Code Ocean data assets.
+
+    Parameters
+    ----------
+    asset_ids : str | list[str]
+        A single data asset id or list of data asset ids.
+    archive : bool, optional
+        True to archive assets, False to unarchive.
+    dry_run : bool, optional
+        If True, do not call API; only print what would be changed.
+    co_client : CodeOcean, optional
+        An instance of the CodeOcean client. If None, a new client is created.
+
+    Returns
+    -------
+    list[dict]
+        Per-asset operation results with keys: asset_id, action, status, error.
+    """
+    if co_client is None:
+        co_client = get_co_client()
+
+    if isinstance(asset_ids, str):
+        asset_ids = [asset_ids]
+    elif asset_ids is None:
+        asset_ids = []
+    else:
+        asset_ids = list(asset_ids)
+
+    unique_asset_ids = list(dict.fromkeys(asset_ids))
+    action = "archive" if archive else "unarchive"
+    results = []
+
+    for asset_id in unique_asset_ids:
+        if dry_run:
+            logger.info(f"[DRY RUN] would {action} asset_id={asset_id}")
+            print(f"[DRY RUN] would {action} asset_id={asset_id}")
+            results.append({
+                "asset_id": asset_id,
+                "action": action,
+                "status": "dry_run",
+                "error": None,
+            })
+            continue
+
+        try:
+            co_client.data_assets.archive_data_asset(data_asset_id=asset_id, archive=archive)
+            logger.info(f"{action}d asset_id={asset_id}")
+            print(f"{action}d asset_id={asset_id}")
+            results.append({
+                "asset_id": asset_id,
+                "action": action,
+                "status": "ok",
+                "error": None,
+            })
+        except Exception as exc:
+            logger.error(f"failed to {action} asset_id={asset_id}: {exc}")
+            print(f"failed to {action} asset_id={asset_id}: {exc}")
+            results.append({
+                "asset_id": asset_id,
+                "action": action,
+                "status": "error",
+                "error": str(exc),
+            })
+
+    return results
