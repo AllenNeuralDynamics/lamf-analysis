@@ -26,6 +26,8 @@ from lamf_analysis.code_ocean import (docdb_utils,
                                       s3_utils)
 from lamf_analysis.code_ocean import code_ocean_utils as cou
 from lamf_analysis.ophys import roi_utils
+from lamf_analysis.ophys import zdrift
+import lamf_analysis.ophys.zstack as zstack
 
 import logging
 logger = logging.getLogger(__name__)
@@ -964,7 +966,7 @@ def get_zdrift_um(plane_path):
     return z_drift_um
 
 
-def get_zdrift_matched_plane_indices(plane_path):
+def get_zdrift_matched_plane_indices(plane_path, run_z_drift_estimation_if_not_found=False):
     try:
         evaluation_path = next((plane_path / 'movie_qc').glob('*_z_drift_evaluation.json'))
     except StopIteration:
@@ -974,6 +976,51 @@ def get_zdrift_matched_plane_indices(plane_path):
         evaluation_data = json.load(f)
     matched_plane_indices = lamf_utils.find_keys(evaluation_data, 'matched_plane_indices', exact_match=True)
     matched_plane_indices = matched_plane_indices[0] if matched_plane_indices else None
+    if (matched_plane_indices is None) and run_z_drift_estimation_if_not_found:
+        print(
+            f"[{plane_path.name}] matched_plane_indices not found in *_z_drift_evaluation.json; "
+            f"calculating one-minute z-drift from decrosstalked movie."
+            f"This may take a while... (> 5 minutes per plane)"
+        )
+        # Get local z-stack registration data
+        zstack_data = get_local_zstack_reg(plane_path)
+        if zstack_data is None:
+            print(f"[{plane_path.name}] Local z-stack registration not found")
+            print(f"[{plane_path.name}] Attempting to load local z-stack for z-drift estimation")
+            try:
+                local_zstack_path = next(plane_path.rglob('*_z_stack_local.h5'))
+            except StopIteration:
+                print(f"[{plane_path.name}] Local z-stack not found in plane_path")
+                print(f"[{plane_path.name}] Attempting to load local z-stack from raw path")
+                raw_path = get_raw_path_from_plane_path(plane_path)
+                raw_plane_path = raw_path / 'pophys' / plane_path.name
+                try:
+                    local_zstack_path = next(raw_plane_path.rglob('*_z_stack_local.h5'), None)
+                except StopIteration:
+                    print(f"[{plane_path.name}] Local z-stack not found in raw_plane_path")
+            zstack_data = zstack.register_local_z_stack(local_zstack_path)
+
+        # Calculate one-minute mean FOVs from decrosstalked movie
+        frame_rate = get_frame_rate_from_plane_path(plane_path)
+        movie_path = get_decrosstalked_movie_file(plane_path)
+        with h5py.File(movie_path, "r") as f:
+            movie_data = f["data"][:]
+        one_min_emf  = zdrift.get_one_minute_mean_fovs(
+            movie_data,
+            frame_rate
+        )
+        
+        # Calculate matched plane indices using z-drift module
+        range_y, range_x = lamf_utils.get_motion_correction_crop_xy_range(plane_path)
+        ref_zstack_crop = zstack_data[:, range_y[0]:range_y[1], range_x[0]:range_x[1]]
+        episodic_mean_fovs_crop = one_min_emf[:, range_y[0]:range_y[1], range_x[0]:range_x[1]]
+        matched_plane_indices = zdrift.get_matched_plane_indices(
+            ref_zstack_crop,
+            episodic_mean_fovs_crop
+        )
+
+        matched_plane_indices = np.asarray(matched_plane_indices).astype(int)
+
     return matched_plane_indices
 
 

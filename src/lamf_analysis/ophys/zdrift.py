@@ -14,6 +14,7 @@ from functools import partial
 
 import lamf_analysis.utils as utils
 import lamf_analysis.ophys.zstack as zstack
+import lamf_analysis.code_ocean.capsule_data_utils as cdu
 
 ###############################################################
 # Zdrift 
@@ -233,7 +234,7 @@ def calc_zdrift(raw_plane_path: Path,
     # TODO: the following code does not work with data uploaded from rig
     # z-stack splitting and saving to h5 should be done first
     try:
-        local_zstack_path = list(raw_plane_path.glob('*_z_stack_local.h5'))[0]
+        local_zstack_path = list(raw_plane_path.rglob('*_z_stack_local.h5'))[0]
     except:
         raise FileNotFoundError('Local z-stack not found')
     ref_zstack = zstack.register_local_z_stack(local_zstack_path)
