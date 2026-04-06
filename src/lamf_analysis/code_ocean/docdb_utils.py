@@ -6,6 +6,10 @@ import lamf_analysis.code_ocean.code_ocean_utils as cou
 from lamf_analysis import utils
 from codeocean import CodeOcean
 
+PROJECT_NAMES = ['Learning mFISH-V1omFISH',
+                'LearningmFISHTask1A',
+                'U01BFCT']
+
 
 def get_docdb_api_client():
     API_GATEWAY_HOST = "api.allenneuraldynamics.org"
@@ -61,11 +65,13 @@ def get_session_infos_from_docdb(subject_id, docdb_api_client=None,
             data_asset_name = response['name']            
             data_asset_id = response['external_links']['Code Ocean'][0]
             s3_path = response['location']
+            project_name = response['data_description']['project_name']
             temp_info = {"acquisition_date": acquisition_date,
                         "session_type": session_type,
                         # "reward_consumed": reward_consumed,
                         "rig_id": rig_id,
                         "session_key": session_name,
+                        "project_name": project_name,
                         "raw_asset_name": data_asset_name,
                         "raw_asset_id": data_asset_id,
                         "s3_path": s3_path
@@ -87,12 +93,15 @@ def get_session_infos_from_docdb(subject_id, docdb_api_client=None,
 
 
 def _filter_test_data(session_infos):
-    ''' Any sessions after the last 3 STAGE_1 sessions are considered test data and removed.
+    # ''' Any sessions after the last 3 STAGE_1 sessions are considered test data and removed.
+    # '''
+    # last_session = session_infos.query('session_type == "STAGE_1" and session_type_exposures == 3')
+    # assert len(last_session) == 1    
+    # last_acq_date = last_session['acquisition_date'].max()
+    # session_infos = session_infos.query('acquisition_date <= @last_acq_date').copy()
+    ''' Any sessions not included in the PROJECT_NAMES
     '''
-    last_session = session_infos.query('session_type == "STAGE_1" and session_type_exposures == 3')
-    assert len(last_session) == 1    
-    last_acq_date = last_session['acquisition_date'].max()
-    session_infos = session_infos.query('acquisition_date <= @last_acq_date').copy()
+    session_infos = session_infos.query('project_name in @PROJECT_NAMES').copy()
     return session_infos
 
 
