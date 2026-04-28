@@ -899,7 +899,8 @@ def get_plane_group_count_and_index(plane_path):
 
     plane_names = [f"{fov['targeted_structure']}_{fov['index']}" for fov in fov_metadata]
     plane_name = plane_path.name
-    plane_group_index = plane_names.index(plane_name)
+    plane_index = plane_names.index(plane_name)
+    plane_group_index = fov_metadata[plane_index]['coupled_fov_index']
     return (plane_group_count, plane_group_index)
 
 
