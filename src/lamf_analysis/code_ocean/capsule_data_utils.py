@@ -574,10 +574,10 @@ def load_dff_from_plane_path(plane_path):
     plane_path = Path(plane_path)
     plane_id = plane_path.name
     dff_path = plane_path / 'dff'
-    h5_fn = dff_path / f'{plane_id}_dff.h5'
-    if not os.path.isfile(h5_fn):
-        h5_fn = dff_path / 'dff.h5'
-    with h5py.File(h5_fn, 'r') as h:
+    dff_paths = list((plane_path/'dff').glob('*dff.h5'))
+    assert len(dff_paths) == 1, f'Multiple or no dff file found for {plane_name}'
+    dff_path = dff_paths[0]
+    with h5py.File(dff_path, 'r') as h:
         dff = h['data'][:]
     return dff
 
@@ -1062,7 +1062,7 @@ def get_baseline_traces(plane_path):
     if not os.path.isdir(plane_path):
         raise ValueError(f'Path not found ({plane_path})')
     plane_name = plane_path.name
-    dff_paths = list((plane_path/'dff').glob('*_dff.h5'))
+    dff_paths = list((plane_path/'dff').glob('*dff.h5'))
     assert len(dff_paths) == 1, f'Multiple or no dff file found for {plane_name}'
     dff_path = dff_paths[0]
     with h5py.File(dff_path, 'r') as h:
@@ -1080,7 +1080,7 @@ def get_dff_noise(plane_path):
     if not os.path.isdir(plane_path):
         raise ValueError(f'Path not found ({plane_path})')
     plane_name = plane_path.name
-    dff_paths = list((plane_path/'dff').glob('*_dff.h5'))
+    dff_paths = list((plane_path/'dff').glob('*dff.h5'))
     assert len(dff_paths) == 1, f'Multiple or no dff file found for {plane_name}'
     dff_path = dff_paths[0]
     with h5py.File(dff_path, 'r') as h:
