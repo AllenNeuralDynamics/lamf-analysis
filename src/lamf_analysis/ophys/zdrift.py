@@ -401,11 +401,10 @@ def image_normalization(image, im_thresh=0, dtype=np.uint16):
                             Just works with 3D data as well.
         im_thresh (float, optional): threshold when calculating pixel intensity percentile.
                             0 by default
-        dtype (str or np.dtype, optional): output data type. np.uint16 by default
+        dtype (np.dtype, optional): output data type. np.uint16 by default
     Return:
         norm_image (np.ndarray)
     """
-    dtype = np.dtype(dtype)
     clip_image = np.clip(image, np.percentile(
         image[image > im_thresh], 0.2), np.percentile(image[image > im_thresh], 99.8))
     norm_image = (clip_image - np.amin(clip_image)) / \
