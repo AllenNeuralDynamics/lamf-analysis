@@ -575,7 +575,7 @@ def load_dff_from_plane_path(plane_path):
     plane_id = plane_path.name
     dff_path = plane_path / 'dff'
     dff_paths = list((plane_path/'dff').glob('*dff.h5'))
-    assert len(dff_paths) == 1, f'Multiple or no dff file found for {plane_name}'
+    assert len(dff_paths) == 1, f'Multiple or no dff file found for {plane_path}'
     dff_path = dff_paths[0]
     with h5py.File(dff_path, 'r') as h:
         dff = h['data'][:]
