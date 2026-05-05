@@ -1,7 +1,7 @@
 h5py
 imageio
 matplotlib
-numpy==1.26.4
+numpy==2.4.4
 opencv-python-headless
 pandas
 Pillow
