@@ -14,6 +14,7 @@ import cv2
 from scipy.sparse import csr_matrix
 import lamf_analysis.utils as lamf_utils
 
+
 ###################################################################################################
 # I/O
 ###################################################################################################
@@ -257,6 +258,27 @@ def append_neuropil_masks_to_roi_table(roi_table, plane_path):
     np_pixelmasks = sparse.COO(np_coords,np_data,shape).todense()
     assert (np.stack(roi_table.mask_matrix.values) == soma_pixelmasks).all()
     roi_table['np_mask'] = list(np_pixelmasks)
+    return roi_table
+
+
+def append_np_subtracted_intensities(roi_table, plane_path):
+    import lamf_analysis.code_ocean.capsule_data_utils as cdu
+
+    roi_table['mask_binary'] = roi_table.mask_matrix.apply(lambda x: np.array(x, dtype=bool))
+    if 'np_mask' not in roi_table.columns:
+        roi_table = append_neuropil_masks_to_roi_table(roi_table, plane_path)
+    roi_table['np_binary'] = roi_table.np_mask.apply(lambda x: np.array(x, dtype=bool)) # just in case, might be duplicate
+
+    mean_img = cdu.load_projection_image(plane_path, 'mean')
+    roi_table['mean_intensity_roi'] = roi_table.mask_binary.apply(lambda mask: mean_img[mask].mean())
+    roi_table['mean_intensity_np'] = roi_table.np_binary.apply(lambda mask: mean_img[mask].mean())
+    roi_table['np_subtracted_mean_intensity'] = roi_table['mean_intensity_roi'] - roi_table['mean_intensity_np']
+
+    max_img = cdu.load_projection_image(plane_path, 'max')
+    roi_table['max_intensity_roi'] = roi_table.mask_binary.apply(lambda mask: max_img[mask].mean())
+    roi_table['max_intensity_np'] = roi_table.np_binary.apply(lambda mask: max_img[mask].mean())
+    roi_table['np_subtracted_max_intensity'] = roi_table['max_intensity_roi'] - roi_table['max_intensity_np']   
+
     return roi_table
 
 
@@ -704,6 +726,72 @@ def plot_contour_and_projections_all(roi_df, img, mask_key="mask_matrix",
                     color='white', ha='center', va='bottom', fontsize=12)
 
     return ax
+
+
+def plot_roi_zoomed(roi_row, img, pad_frac=0.2):
+    """Show zoomed-in view of a single ROI, side by side: without and with mask contour (ROI + neuropil)."""
+    cell_roi_id = roi_row.cell_roi_id
+    mask = np.array(roi_row.mask_matrix > 0, dtype=np.uint8)
+    np_mask = np.array(roi_row.np_mask > 0, dtype=np.uint8) if 'np_mask' in roi_row.index else None
+
+    # Bounding box of the ROI
+    ys, xs = np.where(mask)
+    y0, y1 = ys.min(), ys.max()
+    x0, x1 = xs.min(), xs.max()
+    h = y1 - y0
+    w = x1 - x0
+
+    # Add 20% padding
+    if np_mask is not None:
+        ys_np, xs_np = np.where(np_mask)
+        y0_np, y1_np = ys_np.min(), ys_np.max()
+        x0_np, x1_np = xs_np.min(), xs_np.max()
+        y0 = min(y0, y0_np)
+        y1 = max(y1, y1_np)
+        x0 = min(x0, x0_np)
+        x1 = max(x1, x1_np)
+        h = y1 - y0
+        w = x1 - x0
+    pad_y = int(h * pad_frac)
+    pad_x = int(w * pad_frac)
+    y0 = max(0, y0 - pad_y)
+    y1 = min(img.shape[0], y1 + pad_y)
+    x0 = max(0, x0 - pad_x)
+    x1 = min(img.shape[1], x1 + pad_x)
+
+    cropped_img = img[y0:y1, x0:x1]
+    cropped_mask = mask[y0:y1, x0:x1]
+    cropped_np = np_mask[y0:y1, x0:x1] if np_mask is not None else None
+
+    # if cropped_np is None:
+    vmax = np.percentile(cropped_img, 98)
+    vmin = np.percentile(cropped_img, 1)
+    # else:
+    #     combined = cropped_img[cropped_mask | cropped_np]
+    #     vmax = np.percentile(combined, 80)
+    #     vmin = np.percentile(combined, 1)
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 5))
+
+    # Without contour
+    ax1.imshow(cropped_img, vmin=vmin, vmax=vmax, cmap='gray')
+    ax1.set_title(f'ROI {cell_roi_id}')
+    ax1.axis('off')
+
+    # With contour (ROI in red, neuropil in cyan)
+    ax2.imshow(cropped_img, vmin=vmin, vmax=vmax, cmap='gray')
+    padded = np.pad(cropped_mask, 1, mode='constant', constant_values=0)
+    for contour in measure.find_contours(padded, 0.5):
+        ax2.plot(contour[:, 1] - 1, contour[:, 0] - 1, linewidth=1.5, color='r', label='ROI')
+    if cropped_np is not None:
+        padded_np = np.pad(cropped_np, 1, mode='constant', constant_values=0)
+        for contour in measure.find_contours(padded_np, 0.5):
+            ax2.plot(contour[:, 1] - 1, contour[:, 0] - 1, linewidth=1, color='c', alpha=0.7, label='neuropil')
+    ax2.set_title(f'ROI {cell_roi_id} (red=ROI, cyan=NP)')
+    ax2.axis('off')
+
+    plt.tight_layout()
+    return fig
 
 # TODO: typical plots for 
 # def plot_rois_gt_vs_pred(mask1: np.ndarray,
