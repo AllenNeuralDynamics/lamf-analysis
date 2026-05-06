@@ -756,12 +756,12 @@ def get_roi_table_from_plane_path(plane_path, apply_filter=True, small_roi_radiu
 
 def get_session_json_from_processed_path(processed_path):
     if isinstance(processed_path, str):
-        plane_path = Path(processed_path)
+        processed_path = Path(processed_path)
     try:
-        session_json_fn = next(plane_path.rglob('*session.json'))
+        session_json_fn = next(processed_path.rglob('*session.json'))
     except StopIteration:
-        session_name = plane_path.name.split('_processed')[0]
-        raw_path = plane_path.parent / session_name
+        session_name = processed_path.name.split('_processed')[0]
+        raw_path = processed_path.parent / session_name
         session_json_fn = raw_path / 'session.json'
     with open(session_json_fn) as f:
         session_json = json.load(f)
