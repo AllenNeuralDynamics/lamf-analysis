@@ -26,7 +26,7 @@ def get_imaging_plane_metadata(subject_id: str, raw_only: bool = True) -> pd.Dat
     -------
     pd.DataFrame
         One row per imaging plane (FOV) per session, with columns:
-        mouse_id, session_name, date_string, fov_index, coupled_fov_index,
+        mouse_id, session_name, session_date, fov_index, coupled_fov_index,
         imaging_depth_um, targeted_structure, plane_name, fov_width,
         fov_height, fov_scale_factor_um_per_px, frame_rate_hz, power_pct,
         power_ratio_pct, scanfield_z_um, scanimage_roi_index
@@ -65,7 +65,7 @@ def get_imaging_plane_metadata(subject_id: str, raw_only: bool = True) -> pd.Dat
 
         session_start = session.get("session_start_time", "")
         # Extract YYYY-MM-DD from the ISO timestamp
-        date_string = session_start[:10] if session_start else ""
+        session_date = session_start[:10] if session_start else ""
 
         for stream in session.get("data_streams", []):
             for fov in stream.get("ophys_fovs", []):
@@ -73,10 +73,10 @@ def get_imaging_plane_metadata(subject_id: str, raw_only: bool = True) -> pd.Dat
                 fov_index = fov.get("index")
                 plane_name = f"{targeted}_{fov_index}" if targeted and fov_index is not None else None
                 rows.append({
-                    "mouse_id": subject_id,
+                    "subject_id": subject_id,
                     "session_name": session_name,
-                    "date_string": date_string,
-                    "session_key": f"{subject_id}_{date_string}",
+                    "session_key": f"{subject_id}_{session_date}",
+                    "session_date": session_date,
                     "fov_index": fov_index,
                     "coupled_fov_index": fov.get("coupled_fov_index"),
                     "imaging_depth_um": fov.get("imaging_depth"),
@@ -90,6 +90,7 @@ def get_imaging_plane_metadata(subject_id: str, raw_only: bool = True) -> pd.Dat
                     "power_ratio_pct": fov.get("power_ratio"),
                     "scanfield_z_um": fov.get("scanfield_z"),
                     "scanimage_roi_index": fov.get("scanimage_roi_index"),
+                    "mouse_id": subject_id,
                 })
 
     df = pd.DataFrame(rows)
@@ -113,7 +114,7 @@ def get_session_metadata(subject_id: str, raw_only: bool = True) -> pd.DataFrame
     -------
     pd.DataFrame
         One row per session with columns including:
-        mouse_id, session_name, date_string, session_key, session_type,
+        mouse_id, session_name, session_date, session_key, session_type,
         stimulus, session_type_exposures, stimulus_exposures,
         project_name, rig_id, num_planes, num_coupled_groups,
         session_start_time, session_end_time, session_duration_min,
@@ -159,7 +160,7 @@ def get_session_metadata(subject_id: str, raw_only: bool = True) -> pd.DataFrame
         dd = record.get("data_description", {}) or {}
         session_start = session.get("session_start_time", "")
         session_end = session.get("session_end_time", "")
-        date_string = session_start[:10] if session_start else ""
+        session_date = session_start[:10] if session_start else ""
 
         # Compute duration
         duration_min = None
@@ -202,10 +203,10 @@ def get_session_metadata(subject_id: str, raw_only: bool = True) -> pd.DataFrame
         platform = dd.get("platform", {}) or {}
 
         rows.append({
-            "mouse_id": subject_id,
+            "subject_id": subject_id,
             "session_name": session_name,
-            "date_string": date_string,
-            "session_key": f"{subject_id}_{date_string}",
+            "session_key": f"{subject_id}_{session_date}",
+            "session_date": session_date,
             "session_type": session.get("session_type"),
             "project_name": dd.get("project_name"),
             "rig_id": session.get("rig_id"),
@@ -222,11 +223,12 @@ def get_session_metadata(subject_id: str, raw_only: bool = True) -> pd.DataFrame
             "schema_version": record.get("schema_version"),
             "s3_location": record.get("location"),
             "raw_asset_id": raw_asset_id,
+            "mouse_id": subject_id,
         })
 
     df = pd.DataFrame(rows)
     if not df.empty:
-        df = df.sort_values("date_string").reset_index(drop=True)
+        df = df.sort_values("session_date").reset_index(drop=True)
 
         # --- Computed exposure counters ---
         df["session_type_exposures"] = (
@@ -407,7 +409,7 @@ def get_subject_metadata(subject_id: str) -> pd.DataFrame:
                     well_type = p.get("well_type")
 
     row = {
-        "mouse_id": subject_id,
+        "subject_id": subject_id,
         "sex": subj.get("sex"),
         "genotype": subj.get("genotype"),
         "date_of_birth": subj.get("date_of_birth"),
@@ -426,6 +428,7 @@ def get_subject_metadata(subject_id: str) -> pd.DataFrame:
         "well_type": well_type,
         "bregma_to_lambda_mm": bregma_to_lambda_mm,
         "experimenter": experimenter,
+        "mouse_id": subject_id,
     }
 
     return pd.DataFrame([row])
@@ -468,6 +471,7 @@ def get_all_asset_names(subject_id: str) -> pd.DataFrame:
         dd = record.get("data_description", {}) or {}
         rows.append({
             "mouse_id": subject_id,
+            "subject_id": subject_id,
             "asset_name": record.get("name"),
             "data_level": dd.get("data_level"),
             "s3_location": record.get("location"),
@@ -637,7 +641,7 @@ def get_all_imaging_plane_metadata(
         subject_id = parts[1] if len(parts) > 1 else None
 
         session_start = session.get("session_start_time", "")
-        date_string = session_start[:10] if session_start else ""
+        session_date = session_start[:10] if session_start else ""
 
         for stream in session.get("data_streams", []):
             for fov in stream.get("ophys_fovs", []):
@@ -645,15 +649,15 @@ def get_all_imaging_plane_metadata(
                 fov_index = fov.get("index")
                 plane_name = f"{targeted}_{fov_index}" if targeted and fov_index is not None else None
                 rows.append({
-                    "mouse_id": subject_id,
+                    "subject_id": subject_id,
                     "session_name": session_name,
-                    "date_string": date_string,
-                    "session_key": f"{subject_id}_{date_string}",
-                    "fov_index": fov_index,
-                    "coupled_fov_index": fov.get("coupled_fov_index"),
+                    "session_key": f"{subject_id}_{session_date}",
+                    "session_date": session_date,
+                    "plane_id": plane_name,
                     "imaging_depth_um": fov.get("imaging_depth"),
                     "targeted_structure": targeted,
-                    "plane_id": plane_name,
+                    "fov_index": fov_index,
+                    "coupled_fov_index": fov.get("coupled_fov_index"),
                     "fov_width": fov.get("fov_width"),
                     "fov_height": fov.get("fov_height"),
                     "fov_scale_factor_um_per_px": fov.get("fov_scale_factor"),
@@ -662,12 +666,13 @@ def get_all_imaging_plane_metadata(
                     "power_ratio_pct": fov.get("power_ratio"),
                     "scanfield_z_um": fov.get("scanfield_z"),
                     "scanimage_roi_index": fov.get("scanimage_roi_index"),
+                    "mouse_id": subject_id,
                 })
 
     df = pd.DataFrame(rows)
     if not df.empty:
         df = df.sort_values(
-            ["mouse_id", "date_string", "fov_index"]
+            ["mouse_id", "session_date", "fov_index"]
         ).reset_index(drop=True)
 
     return df
@@ -762,7 +767,7 @@ def get_all_session_metadata(
         dd = record.get("data_description", {}) or {}
         session_start = session.get("session_start_time", "")
         session_end = session.get("session_end_time", "")
-        date_string = session_start[:10] if session_start else ""
+        session_date = session_start[:10] if session_start else ""
 
         # Compute duration
         duration_min = None
@@ -805,10 +810,10 @@ def get_all_session_metadata(
         platform = dd.get("platform", {}) or {}
 
         rows.append({
-            "mouse_id": subject_id,
+            "subject_id": subject_id,
             "session_name": session_name,
-            "date_string": date_string,
-            "session_key": f"{subject_id}_{date_string}",
+            "session_key": f"{subject_id}_{session_date}",
+            "session_date": session_date,
             "session_type": session.get("session_type"),
             "project_name": dd.get("project_name"),
             "rig_id": session.get("rig_id"),
@@ -825,11 +830,12 @@ def get_all_session_metadata(
             "schema_version": record.get("schema_version"),
             "s3_location": record.get("location"),
             "raw_asset_id": raw_asset_id,
+            "mouse_id": subject_id,
         })
 
     df = pd.DataFrame(rows)
     if not df.empty:
-        df = df.sort_values(["mouse_id", "date_string"]).reset_index(drop=True)
+        df = df.sort_values(["mouse_id", "session_date"]).reset_index(drop=True)
 
         # --- Computed exposure counters (per mouse) ---
         df["session_type_exposures"] = (
@@ -1032,7 +1038,7 @@ def get_all_subject_metadata(subject_ids) -> pd.DataFrame:
                         well_type = p.get("well_type")
 
         rows.append({
-            "mouse_id": subject_id,
+            "subject_id": subject_id,
             "sex": subj.get("sex"),
             "genotype": subj.get("genotype"),
             "date_of_birth": subj.get("date_of_birth"),
@@ -1051,6 +1057,7 @@ def get_all_subject_metadata(subject_ids) -> pd.DataFrame:
             "well_type": well_type,
             "bregma_to_lambda_mm": bregma_to_lambda_mm,
             "experimenter": experimenter,
+            "mouse_id": subject_id,
         })
 
     df = pd.DataFrame(rows)
@@ -1091,6 +1098,6 @@ if __name__ == "__main__":
     sessions = get_all_session_metadata(mouse_dict)
     imaging_planes = get_all_imaging_plane_metadata(mouse_dict)
 
-    imaging_planes.to_csv('imaging_plane_metadata.csv', index=False)
-    sessions.to_csv('session_metadata.csv', index=False)
+    imaging_planes.to_csv('ophys_imaging_planes_metadata.csv', index=False)
+    sessions.to_csv('ophys_sessions_metadata.csv', index=False)
     mice.to_csv('mouse_metadata.csv', index=False)
