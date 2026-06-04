@@ -887,6 +887,9 @@ def get_stim_table_csv(plane_path):
 def get_sync_file(plane_path):
     raw_path = get_raw_path_from_plane_path(plane_path)
     sync_fps = list((raw_path / 'behavior').glob('*.h5'))
+    if len(sync_fps) == 0:
+        # look for / pophys (old dataset - e.g., 741863)
+        sync_fps = list((raw_path / 'pophys').glob('*.h5'))
     assert len(sync_fps) == 1, f"Expected one sync file, found {len(sync_fps)}"
     return sync_fps[0]
 
