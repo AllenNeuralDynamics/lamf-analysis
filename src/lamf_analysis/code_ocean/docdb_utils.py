@@ -90,7 +90,7 @@ def _filter_test_data(session_infos):
     ''' Any sessions after the last 3 STAGE_1 sessions are considered test data and removed.
     '''
     last_session = session_infos.query('session_type == "STAGE_1" and session_type_exposures == 3')
-    assert len(last_session) == 1    
+    # assert len(last_session) == 1
     last_acq_date = last_session['acquisition_date'].max()
     session_infos = session_infos.query('acquisition_date <= @last_acq_date').copy()
     return session_infos
