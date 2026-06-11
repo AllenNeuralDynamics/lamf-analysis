@@ -718,7 +718,7 @@ def im_blend(image, overlay, alpha):
 
 
 def image_normalization(image: np.ndarray,
-                        dtype: str = 'uint16',
+                        dtype: str | np.dtype | type[np.generic] = 'uint16',
                         im_thresh: float = 0):
     """Normalize 2D image and convert to dtype
     Prevent saturation.
@@ -727,17 +727,15 @@ def image_normalization(image: np.ndarray,
     ----------
     image : np.ndarray
         input image (2D)
-    dtype : str, optional
+    dtype : str or numpy dtype, optional
         output data type, by default 'uint16'
     im_thresh : float, optional
         threshold when calculating pixel intensity percentile, by default 0
     """
-    assert dtype in ['uint8', 'uint16'], "dtype should be either 'uint8' or 'uint16'"
-
-    if dtype == 'uint8':
-        dtype = np.uint8
-    elif dtype == 'uint16':
-        dtype = np.uint16
+    dtype = np.dtype(dtype)
+    assert dtype in (np.dtype(np.uint8), np.dtype(np.uint16)), (
+        "dtype should be either uint8 or uint16"
+    )
 
     clip_image = np.clip(image, np.percentile(
         image[image > im_thresh], 0.2), np.percentile(image[image > im_thresh], 99.8))

@@ -38,7 +38,7 @@ _ALLOWED_CATEGORIES: Dict[tuple, set] = {
         "image_quality",
         "z_drift",
         "bleaching",
-        "plane_assignment",
+        "imaging",
     },
     ("acquisition", "session"): {
         "imaging",
