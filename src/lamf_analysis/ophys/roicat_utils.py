@@ -43,6 +43,7 @@ def load_roicat_tracking_data(path):
 
 
 def get_alignment_template_to_all(roicat_plane_path):
+    from roicat import util
     aligner_path = Path(roicat_plane_path) / 'tracking.run_data.richfile/aligner.dict_item'
     r = util.RichFile_ROICaT(path=aligner_path)
     values = r.load().value
