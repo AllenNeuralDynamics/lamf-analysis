@@ -50,8 +50,19 @@ def get_alignment_template_to_all(roicat_plane_path):
     return values['results_geometric']['final']['alignment_template_to_all']
 
 
-def load_roicat_results(roicat_path):
+def load_roicat_results(roicat_path, from_s3=False):
     # get all names of subfolders in roicat_path
+    if from_s3:
+        from lamf_analysis.code_ocean import s3_utils
+        roicat_files = s3_utils.list_files_from_s3_location(roicat_path, 'ROICaT.tracking.results.csv')
+            raise ValueError(f"No ROICaT tracking results files found in {roicat_path}")
+        results_dfs = []
+        for roicat_file in roicat_files:
+            results_df = pd.read_csv(roicat_file)
+            results_dfs.append(results_df)
+        combined_results_df = pd.concat(results_dfs, ignore_index=True)
+        return combined_results_df
+        
     roicat_path = Path(roicat_path)
     plane_folders = [f for f in roicat_path.iterdir() if f.is_dir()]
     if len(plane_folders) == 0:
