@@ -54,7 +54,7 @@ def load_roicat_results(roicat_path, from_s3=False):
     # get all names of subfolders in roicat_path
     if from_s3:
         from lamf_analysis.code_ocean import s3_utils
-        roicat_files = s3_utils.list_files_from_s3_location(roicat_path, 'roicat.tracking.results.csv')
+        roicat_files = s3_utils.list_files_from_s3_location(roicat_path, 'ROICaT.tracking.results.csv')
         if len(roicat_files) == 0:
             raise ValueError(f"No ROICaT tracking results files found in {roicat_path}")
         results_dfs = []
