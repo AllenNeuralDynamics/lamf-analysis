@@ -10,7 +10,9 @@ from codeocean import CodeOcean
 PROJECT_NAMES = ['Learning mFISH-V1omFISH',
                 'LearningmFISHTask1A',
                 'U01BFCT']
-
+GENOTYPES = ["Slc32a1-IRES-Cre/wt;Oi1(TIT2L-jGCaMP8s-WPRE-ICL-IRES-tTA2)/wt",
+"Snap25-IRES2-Cre/wt;Oi4(TIT2L-jGCaMP8s-RiboL1-WPRE-ICL-IRES-tTA2-WPRE)/wt",
+]
 
 def get_docdb_api_client():
     API_GATEWAY_HOST = "api.allenneuraldynamics.org"
@@ -46,6 +48,7 @@ def get_session_info_for_session_key(session_key, docdb_api_client=None,
 def get_project_session_infos_from_docdb(docdb_api_client=None,
                                  data_type='multiplane-ophys',
                                  filter_test_data=True,
+                                 filter_by_genotype=True,
                                  least_mouse_subject_id=755252):
     if docdb_api_client is None:
         docdb_api_client = get_docdb_api_client()
@@ -57,6 +60,8 @@ def get_project_session_infos_from_docdb(docdb_api_client=None,
         match_query['$expr'] = {'$gte': [{'$toInt': '$subject.subject_id'}, least_mouse_subject_id]}
     if data_type is not None:
         match_query['name'] = {'$regex': f'^{re.escape(data_type)}'}
+    if filter_by_genotype:
+        match_query['subject.genotype'] = {'$in': GENOTYPES}
 
     agg_pipeline = [
         {
@@ -73,6 +78,7 @@ def get_project_session_infos_from_docdb(docdb_api_client=None,
                 'raw_asset_name': '$name',
                 'raw_asset_id': {'$arrayElemAt': ['$external_links.Code Ocean', 0]},
                 's3_path': '$location',
+                'genotype': '$subject.genotype',
             }
         },
         {
@@ -90,7 +96,8 @@ def get_project_session_infos_from_docdb(docdb_api_client=None,
 
 def get_session_infos_from_docdb(subject_id, docdb_api_client=None,
                                  data_type='multiplane-ophys',
-                                 filter_test_data=True):
+                                 filter_test_data=True,
+                                 filter_by_genotype=True):
     if docdb_api_client is None:
         docdb_api_client = get_docdb_api_client()
     subject_id = str(subject_id)
@@ -100,6 +107,8 @@ def get_session_infos_from_docdb(subject_id, docdb_api_client=None,
     }
     if data_type is not None:
         match_query['name'] = {'$regex': f'^{re.escape(data_type)}'}
+    if filter_by_genotype:
+        match_query['subject.genotype'] = {'$in': GENOTYPES}
 
     agg_pipeline = [
         {
@@ -116,6 +125,7 @@ def get_session_infos_from_docdb(subject_id, docdb_api_client=None,
                 'raw_asset_name': '$name',
                 'raw_asset_id': {'$arrayElemAt': ['$external_links.Code Ocean', 0]},
                 's3_path': '$location',
+                'genotype': '$subject.genotype',
             }
         },
         {
