@@ -88,7 +88,7 @@ def get_data_asset_id_from_name(asset_name,
         print(f"Warning: multiple {data_type} assets found matching name '{asset_name}', returning newest match")
     return results[0].id
 
-def get_co_raw_id_from_name(raw_name, client=None):
+def get_co_raw_id_from_name(raw_name, client=None, multiple_allowed=False):
     ''' Get raw data asset ID from CodeOcean by name
     example:
         raw_name = '1299958728_2022-03-15_13-28-02_multiplane-ophys_raw'
@@ -107,10 +107,11 @@ def get_co_raw_id_from_name(raw_name, client=None):
         query=raw_name,
     )
     results = client.data_assets.search_data_assets(data_asset_params).results
-    assert len(results) == 1, (
-        f"Expected exactly one raw asset matching name '{raw_name}', "
-        f"found {len(results)}"
-    )
+    if not multiple_allowed:
+        assert len(results) == 1, (
+            f"Expected exactly one raw asset matching name '{raw_name}', "
+            f"found {len(results)}"
+        )
     assert 'raw' in results[0].tags
     raw_id = results[0].id
     return raw_id
