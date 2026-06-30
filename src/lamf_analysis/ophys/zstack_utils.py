@@ -166,7 +166,8 @@ def get_cortical_zstack_reg_df(subject_ids):
 
     czstack_reg_results_df = pd.DataFrame()
     for subject_id in subject_ids:
-        derived_assets_df = cou.get_derived_assets_df(subject_id, 'cortical-zstack-registration')
+        derived_assets_df = cou.get_derived_assets_df(subject_id, 'cortical-zstack-registration',
+                                                      add_s3_location=True)
         czstack_reg_results_df = pd.concat([czstack_reg_results_df, derived_assets_df], ignore_index=True)
     czstack_reg_results_df['xy_info'] = czstack_reg_results_df['s3_path'].apply(find_stack_xy_info)
     czstack_reg_results_df['z_info'] = czstack_reg_results_df['s3_path'].apply(find_stack_z_info)
