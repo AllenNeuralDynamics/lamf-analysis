@@ -222,7 +222,7 @@ def _extract_processed_date(asset_name):
     return date_matches[-1]
 
 
-def _data_asset_has_required_files(data_asset_id, required_file_substrings=('dff',)):
+def _data_asset_has_required_files(data_asset_id, required_file_substrings=('dff', 'data_description.json', 'session.json')):
     required_file_substrings = list(required_file_substrings or [])
     if len(required_file_substrings) == 0:
         return True
@@ -287,7 +287,7 @@ def get_session_infos_from_aind_session(subject_id,
 def get_processed_data_info_from_aind_session(subject_id,
                                               data_name='multiplane-ophys',
                                               filter_test_data=True,
-                                              required_file_substrings=('dff',),
+                                              required_file_substrings=('dff', 'data_description.json', 'session.json'),
                                               processed_name_substring='_processed_',
                                               return_all_candidates=False,
                                               offset=0,
@@ -354,7 +354,7 @@ def get_processed_data_info_from_aind_session(subject_id,
 def get_raw_and_processed_dfs_from_aind_session(subject_id,
                                                 data_name='multiplane-ophys',
                                                 filter_test_data=True,
-                                                required_file_substrings=('dff',),
+                                                required_file_substrings=('dff', 'data_description.json', 'session.json'),
                                                 processed_name_substring='_processed_',
                                                 return_all_candidates=False,
                                                 offset=0,
@@ -388,7 +388,7 @@ def get_raw_and_processed_dfs_from_aind_session(subject_id,
 def get_aind_session_docdb_comparison_dfs(subject_id,
                                           data_name='multiplane-ophys',
                                           filter_test_data=True,
-                                          required_file_substrings=('dff',),
+                                          required_file_substrings=('dff', 'data_description.json', 'session.json'),
                                           processed_name_substring='_processed_',
                                           return_all_candidates=False,
                                           offset=0,
