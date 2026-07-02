@@ -289,7 +289,7 @@ def get_processed_data_info_from_aind_session(subject_id,
                                               filter_test_data=True,
                                               required_file_substrings=('dff', 'data_description.json', 'session.json'),
                                               processed_name_substring='_processed_',
-                                              return_all_candidates=False,
+                                              return_all_candidates=True,
                                               offset=0,
                                               limit=1000):
     sessions = get_mouse_sessions_by_filters(
@@ -334,9 +334,14 @@ def get_processed_data_info_from_aind_session(subject_id,
             valid_candidates = [valid_candidates[0]]
 
         for da in valid_candidates:
+            dff_parameters = get_process_parameters(da.id, "dF/F estimation")
+            if 'long_window' in dff_parameters.keys():
+                long_window = dff_parameters['long_window']
+            else:
+                long_window = None
             processed_rows.append({
                 'raw_name': raw_name,
-                'long_window': None,
+                'long_window': long_window,
                 'processed_asset_id': da.id,
                 'processed_date': _extract_processed_date(da.name),
                 'processed_name': da.name,
@@ -356,7 +361,7 @@ def get_raw_and_processed_dfs_from_aind_session(subject_id,
                                                 filter_test_data=True,
                                                 required_file_substrings=('dff', 'data_description.json', 'session.json'),
                                                 processed_name_substring='_processed_',
-                                                return_all_candidates=False,
+                                                return_all_candidates=True,
                                                 offset=0,
                                                 limit=1000):
     raw_df = get_session_infos_from_aind_session(
@@ -390,7 +395,7 @@ def get_aind_session_docdb_comparison_dfs(subject_id,
                                           filter_test_data=True,
                                           required_file_substrings=('dff', 'data_description.json', 'session.json'),
                                           processed_name_substring='_processed_',
-                                          return_all_candidates=False,
+                                          return_all_candidates=True,
                                           offset=0,
                                           limit=1000):
     raw_aind_df, processed_aind_df, merged_aind_df = get_raw_and_processed_dfs_from_aind_session(
