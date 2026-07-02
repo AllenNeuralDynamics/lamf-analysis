@@ -9,7 +9,8 @@ from codeocean import CodeOcean
 
 PROJECT_NAMES = ['Learning mFISH-V1omFISH',
                 'LearningmFISHTask1A',
-                'U01BFCT']
+                'U01BFCT',
+                'CENTER_MOUSEMOTION']
 GENOTYPES = ["Slc32a1-IRES-Cre/wt;Oi1(TIT2L-jGCaMP8s-WPRE-ICL-IRES-tTA2)/wt",
 "Snap25-IRES2-Cre/wt;Oi4(TIT2L-jGCaMP8s-RiboL1-WPRE-ICL-IRES-tTA2-WPRE)/wt",
 ]
@@ -151,7 +152,7 @@ def get_session_infos_from_docdb(subject_id, docdb_api_client=None,
 def _filter_test_data(session_infos):
     ''' Test data are not in the same project or have session_type that includes "test".
     '''
-    session_infos = session_infos.query('project_name in @PROJECT_NAMES')
+    # session_infos = session_infos.query('project_name in @PROJECT_NAMES')
     session_infos = session_infos[~session_infos['session_type'].str.contains('test', case=False)]
     return session_infos
 
