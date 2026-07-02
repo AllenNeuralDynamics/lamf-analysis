@@ -232,12 +232,11 @@ def _data_asset_has_required_files(data_asset_id, required_file_substrings=('dff
     except Exception as exc:
         warnings.warn(f"Unable to list files for data asset {data_asset_id}: {exc}")
         return False
-    exists = np.any([
-        check_name in file
+    has_all_required = all(
+        any(check_name in file for file in files_list)
         for check_name in required_file_substrings
-        for file in files_list
-    ])
-    return bool(exists)
+    )
+    return bool(has_all_required)
 
 
 def get_session_infos_from_aind_session(subject_id,
