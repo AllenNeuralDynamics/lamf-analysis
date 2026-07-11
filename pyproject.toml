@@ -1,0 +1,53 @@
+[project]
+name = "lamf_analysis"
+version = "0.1.6"
+description = "TODO"
+authors = [
+    { name = "Matthew J. Davis", email = "mattjdavis@gmail.com" },
+    { name = "Jinho Kim", email = "jkimkj@gmail.com" }
+]
+
+dependencies = [
+    "h5py",
+    "imageio",
+    "matplotlib",
+    "numpy>=1.26",
+    "opencv-python-headless",
+    "pandas",
+    "Pillow",
+    "pystackreg",
+    "scikit-image",
+    "scikit-learn",
+    "scipy",
+    "seaborn",
+    "tifffile",
+    "tqdm",
+    "xarray",
+    "dask==2026.1.2",
+    "distributed==2026.1.2",
+    "scanimage_tiff_reader",
+    "aind-ophys-utils",
+    "aind-codeocean-api",
+    "aind-codeocean-utils",
+    "aind-data-access-api",
+    "aind-data-schema",
+    "aind-data-schema-models",
+    "aind-session",
+    "boto3==1.28.17",
+    "botocore==1.31.64",
+    "codeocean==0.14.0",
+    "s3fs==2026.1.0",
+    "aiobotocore==2.7.0",
+    "PyYAML",
+    "requests",
+    "roicat",
+    "optuna",
+    "richfile",
+    "hdbscan",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
