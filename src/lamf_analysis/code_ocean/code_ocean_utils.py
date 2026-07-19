@@ -196,6 +196,8 @@ def get_mouse_sessions_by_filters(subject_id, data_name='multiplane-ophys',
     sessions = set()
     for result in results:
         name = result.name
+        if '_multisession' in name:
+            continue
         session = Session(name)
         sessions.add(session)
     sessions = tuple(sorted(sessions, key=lambda s: s.dt))
