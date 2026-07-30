@@ -27,7 +27,8 @@ from tqdm import tqdm
 ####################################################################################################
 
 
-def get_zstack_reg(stack, plane_order, n_planes, n_repeats_per_plane, ref_channel, reg_ops):
+def get_zstack_reg(stack, plane_order, n_planes, n_repeats_per_plane, ref_channel, reg_ops,
+                   low_memory=True):
     """Get registered z-stack, both within and between planes"""
 
     print(f"Registering zstack for reference channel: {ref_channel}")
@@ -38,7 +39,8 @@ def get_zstack_reg(stack, plane_order, n_planes, n_repeats_per_plane, ref_channe
     plane_reg_stack, shifts_within = register_within_plane_multi(stack,
                                                                  plane_order=plane_order,
                                                                  n_planes=n_planes,
-                                                                 n_repeats_per_plane=n_repeats_per_plane)
+                                                                 n_repeats_per_plane=n_repeats_per_plane,
+                                                                 low_memory=low_memory)
     print(f"Frame repeats registered in {np.round(time.time() - new_time, 2)} s")
 
     print("Registering between planes...")
@@ -56,7 +58,7 @@ def get_zstack_reg(stack, plane_order, n_planes, n_repeats_per_plane, ref_channe
 
 def get_zstack_reg_using_shifts(stack, plane_order, n_planes, n_repeats_per_plane,
                                 shifts_within, shifts_between,
-                                target_channel):
+                                target_channel, low_memory=True):
     """Get registered z-stack, both within and between planes"""
 
     print(f"Registering zstack for channel: {target_channel}, using shifts from reference channel")
@@ -68,7 +70,8 @@ def get_zstack_reg_using_shifts(stack, plane_order, n_planes, n_repeats_per_plan
                                                      plane_order=plane_order,
                                                      n_planes=n_planes,
                                                      n_repeats_per_plane=n_repeats_per_plane,
-                                                     shifts=shifts_within)
+                                                     shifts=shifts_within,
+                                                     low_memory=low_memory)
     print(f"Frame repeats registered in {np.round(time.time() - new_time, 2)} s")
 
     print(f"Registering between planes for channel= {target_channel}...")
@@ -127,7 +130,8 @@ def register_cortical_stack(zstack_path: Union[Path, str],
                             stack_metadata: Optional[dict] = None,
                             reference_plane: Optional[int] = 60,
                             ref_channel: Optional[int] = None,
-                            save_1x_registered: bool = False):
+                            save_1x_registered: bool = False,
+                            low_memory: bool = True):
     """Two-step registration of a cortical z-stack up to two channels
 
     Dev notes
@@ -166,6 +170,9 @@ def register_cortical_stack(zstack_path: Union[Path, str],
         (within-channel registration)
     save_1x_registered : bool, optional
         Save 1x registered stack, by default False
+    low_memory : bool, optional
+        Memory-map the input TIFF and register one plane at a time, by default True.
+        Set to False to use parallel registration at the cost of higher memory use.
 
     """
     start_time = time.time()
@@ -188,7 +195,7 @@ def register_cortical_stack(zstack_path: Union[Path, str],
     print(f"Loading stack from: {zstack_path}")
     new_time = time.time()
 
-    stack = imread(Path(zstack_path))
+    stack = imread(zstack_path, out='memmap') if low_memory else imread(zstack_path)
     print(f"Stack shape: {stack.shape} read in {np.round(time.time() - new_time, 2)} s")
 
     # 2. load and parse key metadata
@@ -231,7 +238,7 @@ def register_cortical_stack(zstack_path: Union[Path, str],
 
         reg_dict_ref = get_zstack_reg(stack, plane_order, n_planes,
                                       n_repeats_per_plane, ref_channel,
-                                      reg_ops)
+                                      reg_ops, low_memory=low_memory)
         reg_dict_ref['channel'] = ref_channel
         reg_dict_ref['ref_channel'] = ref_channel
         reg_dicts.append(reg_dict_ref)
@@ -253,7 +260,7 @@ def register_cortical_stack(zstack_path: Union[Path, str],
                                                         ref_channel, target_channel)
         reg_dict_ref = get_zstack_reg(stack_ref, plane_order, n_planes,
                                       n_repeats_per_plane, ref_channel,
-                                      reg_ops)
+                                      reg_ops, low_memory=low_memory)
         reg_dict_ref['channel'] = ref_channel
         reg_dict_ref['ref_channel'] = ref_channel
         reg_dicts.append(reg_dict_ref)
@@ -264,13 +271,14 @@ def register_cortical_stack(zstack_path: Union[Path, str],
                                                         n_repeats_per_plane,
                                                         reg_dict_ref['shifts_within'],
                                                         reg_dict_ref['shifts_between'],
-                                                        target_channel)
+                                                        target_channel,
+                                                        low_memory=low_memory)
             reg_dict_target['channel'] = target_channel
             reg_dict_target['ref_channel'] = ref_channel
         else:
             reg_dict_target = get_zstack_reg(stack_target, plane_order, n_planes,
                                       n_repeats_per_plane, target_channel,
-                                      reg_ops)
+                                      reg_ops, low_memory=low_memory)
             reg_dict_target['channel'] = target_channel
             reg_dict_target['ref_channel'] = target_channel
         reg_dicts.append(reg_dict_target)
@@ -1047,7 +1055,8 @@ def register_within_plane_multi(stack: np.array,
                                 n_repeats_per_plane: int,
                                 shifts: Optional[list] = None,
                                 n_processes: Optional[int] = None,
-                                cpu_buffer: int = 2):
+                                cpu_buffer: int = 2,
+                                low_memory: bool = False):
     """"Register each single plane in a z-stack, uses multiprocessing
 
     Dev notes:
@@ -1070,6 +1079,9 @@ def register_within_plane_multi(stack: np.array,
         Number of processes to use, by default None
     cpu_buffer : int, optional
         Buffer for number of processes, by default 2
+    low_memory : bool, optional
+        Register plane groups sequentially instead of retaining all groups in memory,
+        by default False.
 
     Returns
     -------
@@ -1079,16 +1091,30 @@ def register_within_plane_multi(stack: np.array,
         Shifts for each plane
     """
 
-    indices_list = []
-    zstack_plane = []
-    for i in range(n_planes):
+    def get_plane_frames(plane_index):
         if plane_order == 'step':
-            indices = np.arange(i * n_repeats_per_plane, (i + 1) * n_repeats_per_plane)
+            start = plane_index * n_repeats_per_plane
+            return stack[start:start + n_repeats_per_plane]
         elif plane_order == 'loop':
-            indices = np.arange(i, stack.shape[0], n_planes)
-        indices_list.append(indices)
-        zstack_plane.append(stack[indices])
-    indices_list = np.array(indices_list)
+            return stack[plane_index::n_planes]
+        raise ValueError("plane_order must be either 'step' or 'loop'")
+
+    if low_memory:
+        reg_stack = []
+        calculated_shifts = []
+        for plane_index in tqdm(range(n_planes), desc="Registering z-planes"):
+            plane_frames = np.asarray(get_plane_frames(plane_index))
+            if shifts is None:
+                registered_plane, plane_shifts = _reg_single_plane(plane_frames)
+                calculated_shifts.append(plane_shifts)
+            else:
+                registered_plane = _reg_single_plane_shift(
+                    (plane_frames, shifts[plane_index])
+                )
+            reg_stack.append(registered_plane)
+        return np.asarray(reg_stack), calculated_shifts if shifts is None else shifts
+
+    zstack_plane = [get_plane_frames(i) for i in range(n_planes)]
 
     del stack  # save RAM
     n_processes = n_processes if n_processes is not None else os.cpu_count() - cpu_buffer
