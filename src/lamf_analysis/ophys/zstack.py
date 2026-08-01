@@ -220,6 +220,8 @@ def register_cortical_stack(zstack_path: Union[Path, str],
         plane_order = stack_metadata['plane_order']
         n_planes = stack_metadata['num_slices']
         n_repeats_per_plane = stack_metadata['num_volumes']
+        scanimage_metadata = {}
+        roi_groups_metadata = {}
 
     print(f"Metadata parsed in {np.round(time.time() - new_time, 2)} s")
 
@@ -419,6 +421,49 @@ def metadata_from_scanimage_tif(stack_path):
     stack_metadata['channels_saved'] = channels_saved
     # stack_metadata['z_step_size'] = int(si_metadata['SI.hStackManager.actualStackZStepSize'])
     stack_metadata['z_step_size'] = float(si_metadata['SI.hStackManager.actualStackZStepSize'])
+
+    return stack_metadata, si_metadata, roi_groups_dict
+
+
+def metadata_from_tifffile_tags(stack_path):
+    """Fast metadata extraction using tifffile (reads only the first IFD).
+
+    Use instead of metadata_from_scanimage_tif when the file is very large and
+    ScanImageTiffReader would scan all IFDs (which is slow on network filesystems).
+    Reads the 'Software' tag (SI variables) and 'Artist' tag (ROI groups JSON)
+    from the first page only.
+
+    Returns the same three-tuple as metadata_from_scanimage_tif.
+    """
+    stack_path = Path(stack_path)
+    with TiffFile(str(stack_path)) as tif:
+        tags = tif.pages[0].tags
+        si_str = tags['Software'].value
+        rg_str = tags['Artist'].value
+
+    si_metadata = _extract_dict_from_si_string(si_str)
+    try:
+        roi_groups_dict = json.loads(rg_str)
+    except json.JSONDecodeError:
+        roi_groups_dict = {}
+
+    stack_metadata = {}
+    stack_metadata['num_slices'] = int(si_metadata['SI.hStackManager.actualNumSlices'])
+    stack_metadata['num_volumes'] = int(si_metadata['SI.hStackManager.actualNumVolumes'])
+    stack_metadata['frames_per_slice'] = int(si_metadata['SI.hStackManager.framesPerSlice'])
+    stack_metadata['z_steps'] = _str_to_float_list(si_metadata['SI.hStackManager.zs'])
+    stack_metadata['actuator'] = si_metadata['SI.hStackManager.stackActuator']
+    channels_saved = [ss for ss in re.split(r'\[|\]| ', si_metadata['SI.hChannels.channelSave']) if len(ss) > 0]
+    channels_saved = [int(cs) for cs in channels_saved if str(int(cs)) == cs]
+    stack_metadata['num_channels'] = len(channels_saved)
+    stack_metadata['channels_saved'] = channels_saved
+    stack_metadata['z_step_size'] = float(si_metadata['SI.hStackManager.actualStackZStepSize'])
+
+    # infer plane_order
+    if stack_metadata['num_volumes'] == 1:
+        stack_metadata['plane_order'] = 'step'
+    else:
+        stack_metadata['plane_order'] = 'loop'
 
     return stack_metadata, si_metadata, roi_groups_dict
 
