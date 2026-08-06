@@ -2,6 +2,17 @@ import numpy as np
 import pandas as pd
 import pickle
 
+from lamf_analysis.ophys.general_utilities import time_from_last
+
+
+def _time_col(df):
+    """Return a time array from a df that has either 'time' or 'timestamps'."""
+    if "time" in df.columns:
+        return df["time"].values
+    if "timestamps" in df.columns:
+        return df["timestamps"].values
+    raise KeyError("dataframe has neither 'time' nor 'timestamps' column")
+
 
 def find_image_changes(image_index: pd.Series, 
                        omitted_index: int) -> np.array:
@@ -45,24 +56,44 @@ def add_prior_image_to_stimulus_presentations(sp_df):
     return sp_df
 
 
-def add_licks_to_stimulus_presentations(sp_df, licks):
-    """
-    Add licks to stimulus_presentations_df
-    """
+def add_licks_to_stimulus_presentations(sp_df, licks, rewards=None,
+                                        change_times=None):
+    """Add time-from-last-lick / -reward / -change columns to sp_df.
 
+    Parameters
+    ----------
+    sp_df : pd.DataFrame
+        stimulus presentations table (needs 'start_time'; 'is_change' if
+        change_times not given).
+    licks : pd.DataFrame
+        licks table with a 'time' or 'timestamps' column.
+    rewards : pd.DataFrame, optional
+        rewards table with a 'time' or 'timestamps' column.
+    change_times : array-like, optional
+        change onset times; if None, derived from sp_df['is_change'].
+    """
+    flash_times = sp_df["start_time"].values
+    lick_times = _time_col(licks)
 
-    # TODO: passive/active should 
     if len(lick_times) < 5:  # Passive sessions
         time_from_last_lick = np.full(len(flash_times), np.nan)
     else:
         time_from_last_lick = time_from_last(flash_times, lick_times)
 
-    if len(reward_times) < 1:  # Sometimes mice are bad
+    if rewards is None or len(rewards) < 1:  # Sometimes mice are bad
         time_from_last_reward = np.full(len(flash_times), np.nan)
     else:
+        reward_times = _time_col(rewards)
         time_from_last_reward = time_from_last(flash_times, reward_times)
 
-    time_from_last_change = time_from_last(flash_times, change_times)
+    if change_times is None:
+        change_times = sp_df.loc[
+            sp_df["is_change"].astype("boolean").fillna(False), "start_time"].values
+    change_times = np.asarray(change_times)
+    if len(change_times):
+        time_from_last_change = time_from_last(flash_times, change_times)
+    else:
+        time_from_last_change = np.full(len(flash_times), np.nan)
 
     sp_df["time_from_last_lick"] = time_from_last_lick
     sp_df["time_from_last_reward"] = time_from_last_reward
@@ -127,21 +158,99 @@ def add_stimulus_info_to_stimulus_presentations(sp_df):
 
 
 
+def trace_average(values, timestamps, t_start, t_end):
+    """Mean of a trace over the half-open time window [t_start, t_end).
+
+    Returns np.nan if no samples fall in the window.
+    """
+    values = np.asarray(values)
+    timestamps = np.asarray(timestamps)
+    mask = (timestamps >= t_start) & (timestamps < t_end)
+    if not np.any(mask):
+        return np.nan
+    return float(np.nanmean(values[mask]))
+
+
+def add_response_latency(sp_df):
+    """Add per-flash licking-response columns using the 'licks' list column.
+
+    Adds: 'licked' (bool), 'rewarded' (bool), 'response_latency' (s from flash
+    onset to first lick within the flash window; np.nan if none).
+    Requires the 'licks' (and 'rewards') list-per-flash columns added upstream.
+    """
+    def _latency(row):
+        licks = row["licks"]
+        if licks is None or len(licks) == 0:
+            return np.nan
+        return float(np.min(licks) - row["start_time"])
+
+    sp_df["response_latency"] = sp_df.apply(_latency, axis=1)
+    sp_df["licked"] = sp_df["licks"].apply(lambda x: x is not None and len(x) > 0)
+    if "rewards" in sp_df.columns:
+        sp_df["rewarded"] = sp_df["rewards"].apply(lambda x: x is not None and len(x) > 0)
+    return sp_df
+
+
+def annotate_flash_rolling_metrics(sp_df, window_s=320.0,
+                                   reward_rate_threshold_per_s=1.0 / 90.0):
+    """Add a rolling reward rate and an engagement_state label per flash.
+
+    Reward rate is computed time-based (rewards / second) in a centered
+    ``window_s`` window over each flash's start_time, with the denominator
+    clipped to the session span so edges are not underestimated (Garrett 2025 /
+    AllenSDK convention: engaged when reward rate > 2/3 rewards per minute =
+    1/90 rew/s). A flash counts as rewarded if it has >= 1 entry in its 'rewards'
+    list column.
+
+    Adds: 'reward_rate' (rew/s), 'engagement_state' ('engaged'/'disengaged').
+    """
+    t = sp_df["start_time"].values.astype(float)
+    if "rewarded" in sp_df.columns:
+        rewarded = sp_df["rewarded"].values.astype(float)
+    else:
+        rewarded = sp_df["rewards"].apply(
+            lambda x: 1.0 if (x is not None and len(x) > 0) else 0.0).values
+    rew_times = t[rewarded > 0]
+    rew_times.sort()
+    half = window_s / 2.0
+    lo = np.maximum(t - half, t.min())
+    hi = np.minimum(t + half, t.max())
+    n = np.searchsorted(rew_times, hi, "right") - np.searchsorted(rew_times, lo, "left")
+    span = np.clip(hi - lo, 1e-9, None)
+    reward_rate = n / span
+    sp_df["reward_rate"] = reward_rate
+    sp_df["engagement_state"] = np.where(
+        reward_rate > reward_rate_threshold_per_s, "engaged", "disengaged")
+    return sp_df
+
+
 def extended_stimulus_presentations_table(sp_df: pd.DataFrame,
                                           licks: pd.DataFrame,
                                           rewards: pd.DataFrame,
                                           change_times: np.array,
                                           running_speed_df: pd.DataFrame,
                                           pupil_area: pd.DataFrame):
-    
+
     # sp_df = sp_df.copy()
     sp_df = add_prior_image_to_stimulus_presentations(sp_df)
+    # ensure a 'change' alias exists (some downstream code uses 'change')
+    if "change" not in sp_df.columns and "is_change" in sp_df.columns:
+        sp_df["change"] = sp_df["is_change"].astype("boolean").fillna(False).astype(bool)
     sp_df = add_stimulus_info_to_stimulus_presentations(sp_df)
 
+    lick_times = _time_col(licks)
+    reward_times = _time_col(rewards)
 
-    lick_times = licks['time'].values
-    reward_times = rewards['time'].values
-    
+    # normalize column names from comb (timestamps -> time) so the trace_average
+    # calls below work regardless of the caller's schema
+    if "time" not in running_speed_df.columns and "timestamps" in running_speed_df.columns:
+        running_speed_df = running_speed_df.rename(columns={"timestamps": "time"})
+    if pupil_area is not None and "time" not in pupil_area.columns \
+            and "timestamps" in pupil_area.columns:
+        pupil_area = pupil_area.rename(columns={"timestamps": "time"})
+    if "omitted" in sp_df.columns:
+        sp_df["omitted"] = sp_df["omitted"].astype("boolean").fillna(False).astype(bool)
+
 
     # Lists of licks/rewards on each flash
     licks_each_flash = sp_df.apply(
