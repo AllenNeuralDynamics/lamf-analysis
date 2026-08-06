@@ -18,9 +18,9 @@ get_stim_table(pkl_file, sync_file)              -> (stim_pres, trials)
 Only the change-detection (OPHYS / image) stimulus is reproduced here (comb's "else" branch);
 STAGE_0 / STAGE_1 grating-training parsers are not ported.
 """
-import os
+import ast
 import pickle
-from typing import List, Sequence, Tuple
+from typing import Sequence
 
 import numpy as np
 import pandas as pd
