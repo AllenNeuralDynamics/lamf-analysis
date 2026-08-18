@@ -1,8 +1,13 @@
-import numpy as np
-
-
 """Running behavior metrics.
 
+To get a BehaviorSessionDataset object:
+
+from comb.behavior_session_dataset import BehaviorSessionDataset
+raw_data_dir = "/root/capsule/data/multiplane-ophys_687000_2023-09-26_08-56-32"
+bsd = BehaviorSessionDataset(raw_data_dir)
+"""
+
+import numpy as np
 To get a BehaviorSessionDataset object:
 
 from comb.behavior_session_dataset import BehaviorSessionDataset
