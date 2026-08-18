@@ -209,7 +209,7 @@ def engagement_state(
 
     States are ``"engaged"`` and ``"disengaged"``. For lick-based
     engagement, samples in a consumed auto-reward window are labeled
-    ``"auto_reward"`` when ``auto_reward_times`` are supplied.
+    ``"autoreward"`` when ``auto_reward_times`` are supplied.
     """
     sample_times = _validated_times(sample_times, "sample_times")
 
