@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import pickle
 
+from lamf_analysis.behavior.engagement import engagement_state
 from lamf_analysis.ophys.general_utilities import time_from_last
 
 
@@ -12,6 +13,30 @@ def _time_col(df):
     if "timestamps" in df.columns:
         return df["timestamps"].values
     raise KeyError("dataframe has neither 'time' nor 'timestamps' column")
+
+
+def _event_times(events, name):
+    """Return event times from a dataframe or one-dimensional array-like."""
+    if isinstance(events, pd.DataFrame):
+        return _time_col(events).astype(float)
+    values = np.asarray(events, dtype=float)
+    if values.ndim != 1:
+        raise ValueError(f"{name} must be one-dimensional")
+    return values
+
+
+def _event_times_from_flash_lists(sp_df, column):
+    """Flatten a list-per-flash event column into one time array."""
+    if column not in sp_df.columns:
+        raise KeyError(f"stimulus presentations has no '{column}' column")
+    event_arrays = [
+        np.asarray(events, dtype=float)
+        for events in sp_df[column]
+        if events is not None and len(events) > 0
+    ]
+    if not event_arrays:
+        return np.array([], dtype=float)
+    return np.concatenate(event_arrays)
 
 
 def find_image_changes(image_index: pd.Series, 
@@ -191,36 +216,102 @@ def add_response_latency(sp_df):
     return sp_df
 
 
-def annotate_flash_rolling_metrics(sp_df, window_s=320.0,
-                                   reward_rate_threshold_per_s=1.0 / 90.0):
-    """Add a rolling reward rate and an engagement_state label per flash.
+def annotate_flash_rolling_metrics(
+    sp_df,
+    window_s=320.0,
+    reward_rate_threshold_per_s=1.0 / 90.0,
+    *,
+    engagement_method="lick",
+    licks=None,
+    rewards=None,
+    auto_rewards=None,
+    lick_gaussian_sd_s=30.0,
+    lick_rate_threshold_per_min=3.0,
+    inter_lick_interval_threshold_s=0.7,
+    auto_reward_post_window_s=10.0,
+    auto_reward_consummatory_window_s=5.0,
+):
+    """Add a reward- or lick-based engagement label to each flash.
 
-    Reward rate is computed time-based (rewards / second) in a centered
-    ``window_s`` window over each flash's start_time, with the denominator
-    clipped to the session span so edges are not underestimated (Garrett 2025 /
-    AllenSDK convention: engaged when reward rate > 2/3 rewards per minute =
-    1/90 rew/s). A flash counts as rewarded if it has >= 1 entry in its 'rewards'
-    list column.
+    Parameters
+    ----------
+    sp_df : pd.DataFrame
+        Stimulus presentations with ``start_time`` and list-per-flash event
+        columns when the corresponding raw event tables are not supplied.
+    engagement_method : {"reward", "lick"}
+        Reward uses a centered 320-second rate by default. Lick uses a centered
+        Gaussian lick-bout rate (30-second SD, engaged above 3 bouts/min).
+    licks, rewards, auto_rewards : dataframe or one-dimensional array, optional
+        Raw event times. Dataframes must have a ``time`` or ``timestamps``
+        column. Licks or rewards are otherwise read from the corresponding
+        list-per-flash column in ``sp_df``.
 
-    Adds: 'reward_rate' (rew/s), 'engagement_state' ('engaged'/'disengaged').
+    Returns
+    -------
+    pd.DataFrame
+        The input table with ``engagement_state`` and either ``reward_rate``
+        (rewards/s) or ``lick_bout_rate`` (bouts/min). Lick-based samples after
+        a consumed auto reward are labeled ``autoreward`` when those event
+        times are supplied.
     """
-    t = sp_df["start_time"].values.astype(float)
-    if "rewarded" in sp_df.columns:
-        rewarded = sp_df["rewarded"].values.astype(float)
+    sample_times = sp_df["start_time"].values.astype(float)
+
+    if engagement_method == "reward":
+        if rewards is None:
+            if "rewarded" in sp_df.columns:
+                rewarded = sp_df["rewarded"].values.astype(bool)
+            else:
+                if "rewards" not in sp_df.columns:
+                    raise KeyError(
+                        "stimulus presentations has no 'rewards' column"
+                    )
+                rewarded = sp_df["rewards"].apply(
+                    lambda events: events is not None and len(events) > 0
+                ).values
+            # Preserve the historical convention that assigns each reward to
+            # the onset of its containing flash.
+            reward_times = sample_times[rewarded]
+        else:
+            reward_times = _event_times(rewards, "rewards")
+        rate, state = engagement_state(
+            sample_times,
+            method="reward",
+            reward_times=reward_times,
+            reward_window_s=window_s,
+            reward_rate_threshold_per_s=reward_rate_threshold_per_s,
+        )
+        sp_df["reward_rate"] = rate
+    elif engagement_method == "lick":
+        lick_times = (
+            _event_times_from_flash_lists(sp_df, "licks")
+            if licks is None
+            else _event_times(licks, "licks")
+        )
+        auto_reward_times = (
+            None
+            if auto_rewards is None
+            else _event_times(auto_rewards, "auto_rewards")
+        )
+        rate, state = engagement_state(
+            sample_times,
+            method="lick",
+            lick_times=lick_times,
+            auto_reward_times=auto_reward_times,
+            lick_gaussian_sd_s=lick_gaussian_sd_s,
+            lick_rate_threshold_per_min=lick_rate_threshold_per_min,
+            inter_lick_interval_threshold_s=(
+                inter_lick_interval_threshold_s
+            ),
+            auto_reward_post_window_s=auto_reward_post_window_s,
+            auto_reward_consummatory_window_s=(
+                auto_reward_consummatory_window_s
+            ),
+        )
+        sp_df["lick_bout_rate"] = rate
     else:
-        rewarded = sp_df["rewards"].apply(
-            lambda x: 1.0 if (x is not None and len(x) > 0) else 0.0).values
-    rew_times = t[rewarded > 0]
-    rew_times.sort()
-    half = window_s / 2.0
-    lo = np.maximum(t - half, t.min())
-    hi = np.minimum(t + half, t.max())
-    n = np.searchsorted(rew_times, hi, "right") - np.searchsorted(rew_times, lo, "left")
-    span = np.clip(hi - lo, 1e-9, None)
-    reward_rate = n / span
-    sp_df["reward_rate"] = reward_rate
-    sp_df["engagement_state"] = np.where(
-        reward_rate > reward_rate_threshold_per_s, "engaged", "disengaged")
+        raise ValueError("engagement_method must be 'reward' or 'lick'")
+
+    sp_df["engagement_state"] = state
     return sp_df
 
 
@@ -229,7 +320,10 @@ def extended_stimulus_presentations_table(sp_df: pd.DataFrame,
                                           rewards: pd.DataFrame,
                                           change_times: np.array,
                                           running_speed_df: pd.DataFrame,
-                                          pupil_area: pd.DataFrame):
+                                          pupil_area: pd.DataFrame,
+                                          engagement_method: str = "lick",
+                                          auto_rewards=None,
+                                          engagement_options: dict | None = None):
 
     # sp_df = sp_df.copy()
     sp_df = add_prior_image_to_stimulus_presentations(sp_df)
@@ -319,7 +413,15 @@ def extended_stimulus_presentations_table(sp_df: pd.DataFrame,
     # sp_df = add_first_lick_in_bout_to_stimulus_presentations(sp_df)
     # sp_df = get_consumption_licks(sp_df)
     # sp_df = get_metrics(sp_df, licks, rewards)
-    sp_df = annotate_flash_rolling_metrics(sp_df)
+    if engagement_options is None:
+        engagement_options = {}
+    sp_df = annotate_flash_rolling_metrics(
+        sp_df,
+        engagement_method=engagement_method,
+        licks=licks,
+        auto_rewards=auto_rewards,
+        **engagement_options,
+    )
 
     return sp_df
 
