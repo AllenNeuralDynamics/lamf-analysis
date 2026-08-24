@@ -4,6 +4,7 @@ import os
 import time
 import re
 from multiprocessing import Pool
+import psutil
 from pathlib import Path
 from typing import Optional, Tuple, Union
 
@@ -1089,7 +1090,16 @@ def register_within_plane_multi(stack: np.array,
     indices_list = np.array(indices_list)
 
     del stack  # save RAM
-    n_processes = n_processes if n_processes is not None else os.cpu_count() - cpu_buffer
+    plane_memory = zstack_plane[0].nbytes * 2  # input + output per worker
+    available_memory = psutil.virtual_memory().available
+    max_by_memory = max(1, int(available_memory * 0.8 / plane_memory))
+    n_processes_default = min(os.cpu_count() - cpu_buffer, max_by_memory)
+    n_processes = n_processes if n_processes is not None else n_processes_default
+    print(f"n_processes: {n_processes} "
+          f"(cpu_limit={os.cpu_count() - cpu_buffer}, "
+          f"mem_limit={max_by_memory}, "
+          f"plane_memory={plane_memory/1e6:.0f} MB, "
+          f"available={available_memory/1e9:.1f} GB)")
     if shifts is None:
         with Pool(n_processes) as p:
             results = list(p.map(_reg_single_plane, zstack_plane))
