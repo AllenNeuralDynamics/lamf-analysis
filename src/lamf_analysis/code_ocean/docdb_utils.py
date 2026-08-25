@@ -15,7 +15,7 @@ GENOTYPES = ["Slc32a1-IRES-Cre/wt;Oi1(TIT2L-jGCaMP8s-WPRE-ICL-IRES-tTA2)/wt",
 "Snap25-IRES2-Cre/wt;Oi4(TIT2L-jGCaMP8s-RiboL1-WPRE-ICL-IRES-tTA2-WPRE)/wt",
 ]
 
-def get_docdb_api_client():
+def get_docdb_api_client(version: str = "v2") -> MetadataDbClient:
     API_GATEWAY_HOST = "api.allenneuraldynamics.org"
     DATABASE = "metadata_index"
     COLLECTION = "data_assets"
@@ -23,6 +23,7 @@ def get_docdb_api_client():
             host=API_GATEWAY_HOST,
             database=DATABASE,
             collection=COLLECTION,
+            version=version,
         )
     return docdb_api_client
 
