@@ -3,9 +3,8 @@ import json
 import os
 import time
 import re
-# from multiprocessing import Pool
-from dask.distributed import Client
-from dask import delayed, compute
+from multiprocessing import Pool
+import psutil
 from pathlib import Path
 from typing import Optional, Tuple, Union
 
@@ -1091,27 +1090,27 @@ def register_within_plane_multi(stack: np.array,
     indices_list = np.array(indices_list)
 
     del stack  # save RAM
-    n_processes = n_processes if n_processes is not None else os.cpu_count() - cpu_buffer
+    plane_memory = zstack_plane[0].nbytes * 2  # input + output per worker
+    available_memory = psutil.virtual_memory().available
+    max_by_memory = max(1, int(available_memory * 0.8 / plane_memory))
+    n_processes_default = min(os.cpu_count() - cpu_buffer, max_by_memory)
+    n_processes = n_processes if n_processes is not None else n_processes_default
+    print(f"n_processes: {n_processes} "
+          f"(cpu_limit={os.cpu_count() - cpu_buffer}, "
+          f"mem_limit={max_by_memory}, "
+          f"plane_memory={plane_memory/1e6:.0f} MB, "
+          f"available={available_memory/1e9:.1f} GB)")
     if shifts is None:
-        # with Pool(n_processes) as p:
-        #     result = list(tqdm(p.imap(_reg_single_plane, zstack_plane), total=len(zstack_plane)))
-        client = Client()
-        tasks = [delayed(_reg_single_plane)(zstack_plane[i]) for i in range(n_planes)]
-        results = compute(*tasks, num_workers = n_processes)
-        client.close()
+        with Pool(n_processes) as p:
+            results = list(p.map(_reg_single_plane, zstack_plane))
         reg_stack = [r[0] for r in results]
         shifts = [r[1] for r in results]
         reg_stack = np.array(reg_stack)
     else:
         input_params = [(zstack_plane[i], shifts[i]) for i in range(len(zstack_plane))]
-        # with Pool(n_processes) as p:
-            # result = list(tqdm(p.imap(_reg_single_plane_shift, input_params), total=len(input_params)))
-        client = Client()
-        tasks = [delayed(_reg_single_plane_shift)(input_params[i]) for i in range(n_planes)]
-        results = compute(*tasks, num_workers = n_processes)
-        client.close()
-        
-        reg_stack = np.array(results)
+        with Pool(n_processes) as p:
+            reg_stack = list(p.map(_reg_single_plane_shift, input_params))
+        reg_stack = np.array(reg_stack)
     return reg_stack, shifts
 
 
