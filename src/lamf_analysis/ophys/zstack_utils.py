@@ -10,58 +10,58 @@ from lamf_analysis import utils
 from lamf_analysis.ophys import zstack
 
 
-def get_roi_groups_metadata(s3_path):
+def _is_s3_path(path) -> bool:
+    return str(path).startswith('s3://')
+
+
+def _load_json_by_name(path, filename: str) -> dict:
+    """Load a named JSON file from either an S3 prefix or a local directory tree."""
+    if _is_s3_path(path):
+        files = s3_utils.list_files_from_s3_location(str(path))
+        matches = [f for f in files if filename in f]
+        if not matches:
+            raise FileNotFoundError(f"{filename} not found at {path}")
+        return s3_utils.read_json_from_s3(matches[0])
+    else:
+        candidates = list(Path(path).rglob(filename))
+        if not candidates:
+            raise FileNotFoundError(f"{filename} not found under {path}")
+        with open(candidates[0]) as f:
+            return json.load(f)
+
+
+def get_roi_groups_metadata(path):
     """
-    Load roi_groups_metadata.json from an S3 path.
+    Load roi_groups_metadata.json from an S3 prefix or a local directory.
 
     Parameters:
-        s3_path (str | PathLike): S3 prefix containing the metadata file.
+        path (str | PathLike): S3 prefix or local directory containing the file.
 
     Returns:
         dict: Parsed JSON contents of roi_groups_metadata.json.
-
-    Raises:
-        FileNotFoundError: If the file is not found in the provided S3 path.
     """
-    files = s3_utils.list_files_from_s3_location(str(s3_path))
-    roi_groups_metadata_fn_list = [f for f in files if 'roi_groups_metadata.json' in f]
-    if len(roi_groups_metadata_fn_list) == 0:
-        raise FileNotFoundError("No roi_groups_metadata.json file found.")
-    else:
-        roi_groups_metadata_fn = roi_groups_metadata_fn_list[0]    
-        roi_groups_metadata = s3_utils.read_json_from_s3(roi_groups_metadata_fn)
-    return roi_groups_metadata
+    return _load_json_by_name(path, 'roi_groups_metadata.json')
 
 
-def get_scanimage_metadata(s3_path):
+def get_scanimage_metadata(path):
     """
-    Load scanimage_metadata.json from an S3 path.
+    Load scanimage_metadata.json from an S3 prefix or a local directory.
 
     Parameters:
-        s3_path (str | PathLike): S3 prefix containing the metadata file.
+        path (str | PathLike): S3 prefix or local directory containing the file.
 
     Returns:
         dict: Parsed JSON contents of scanimage_metadata.json.
-
-    Raises:
-        FileNotFoundError: If the file is not found in the provided S3 path.
     """
-    files = s3_utils.list_files_from_s3_location(str(s3_path))
-    scanimage_metadata_fn_list = [f for f in files if 'scanimage_metadata.json' in f]
-    if len(scanimage_metadata_fn_list) == 0:
-        raise FileNotFoundError("No scanimage_metadata.json file found.")
-    else:
-        scanimage_metadata_fn = scanimage_metadata_fn_list[0]    
-        scanimage_metadata = s3_utils.read_json_from_s3(scanimage_metadata_fn)
-    return scanimage_metadata
+    return _load_json_by_name(path, 'scanimage_metadata.json')
 
 
-def find_stack_xy_info(s3_path):
+def find_stack_xy_info(path):
     """
     Extract XY size and pixel resolution info from ROI groups metadata.
 
     Parameters:
-        s3_path (str | PathLike): S3 prefix containing roi_groups_metadata.json.
+        path (str | PathLike): S3 prefix or local directory containing roi_groups_metadata.json.
 
     Returns:
         tuple[list, list]: (sizeXY, pixelResolutionXY) where each is typically a list-like
@@ -71,18 +71,18 @@ def find_stack_xy_info(s3_path):
         FileNotFoundError: If roi_groups_metadata.json is missing.
         IndexError: If expected keys are not present.
     """
-    roi_groups_metadata = get_roi_groups_metadata(s3_path)
+    roi_groups_metadata = get_roi_groups_metadata(path)
     sizeXY = utils.find_keys(roi_groups_metadata, 'sizeXY')[0][1]
     dimXY = utils.find_keys(roi_groups_metadata, 'pixelResolutionXY')[0][1]
     return sizeXY, dimXY
 
 
-def find_stack_z_info(s3_path):
+def find_stack_z_info(path):
     """
     Extract Z stack acquisition parameters from ScanImage metadata.
 
     Parameters:
-        s3_path (str | PathLike): S3 prefix containing scanimage_metadata.json.
+        path (str | PathLike): S3 prefix or local directory containing scanimage_metadata.json.
 
     Returns:
         tuple[float, int, int]: (z_step_size_um, num_slices, num_volumes).
@@ -92,20 +92,20 @@ def find_stack_z_info(s3_path):
         IndexError: If expected keys are not present.
         ValueError: If casting to float/int fails.
     """
-    scanimage_metadata = get_scanimage_metadata(s3_path)
+    scanimage_metadata = get_scanimage_metadata(path)
     z_step_size = float(utils.find_keys(scanimage_metadata, 'SI.hStackManager.actualStackZStepSize')[0][1])
     z_num_slices = int(utils.find_keys(scanimage_metadata, 'SI.hStackManager.actualNumSlices')[0][1])
     num_volumes = int(utils.find_keys(scanimage_metadata, 'SI.hStackManager.actualNumVolumes')[0][1])
-    
+
     return z_step_size, z_num_slices, num_volumes
 
 
-def find_stack_acquisition_info(s3_path):
+def find_stack_acquisition_info(path):
     """
     Determine stack acquisition mode (loop vs step) and actuator/mode settings.
 
     Parameters:
-        s3_path (str | PathLike): S3 prefix containing scanimage_metadata.json.
+        path (str | PathLike): S3 prefix or local directory containing scanimage_metadata.json.
 
     Returns:
         tuple[str, str, str]: (derived_mode, stackActuator, stackMode) where derived_mode is
@@ -115,7 +115,7 @@ def find_stack_acquisition_info(s3_path):
         FileNotFoundError: If scanimage_metadata.json is missing.
         IndexError: If expected keys are not present.
     """
-    scanimage_metadata = get_scanimage_metadata(s3_path)
+    scanimage_metadata = get_scanimage_metadata(path)
     zstack_actuator = utils.find_keys(scanimage_metadata, 'SI.hStackManager.stackActuator')[0][1]
     zstack_mode = utils.find_keys(scanimage_metadata, 'SI.hStackManager.stackMode')[0][1]
     if (zstack_actuator == "fastZ") and (zstack_mode == "fast"):
@@ -125,23 +125,25 @@ def find_stack_acquisition_info(s3_path):
     return zstack_acquisition_mode, zstack_actuator, zstack_mode
 
 
-def get_xy_size_um(sizeXY, tol=0.005):
+# Mesoscope calibration: 157 µm per ScanImage sizeXY unit (derived from known pairs
+# sizeXY=2.547771 → 400 µm, sizeXY=4.458599 → 700 µm, both giving factor=157.0 exactly).
+_SCANIMAGE_UM_PER_SIZE_UNIT = 157.0
+
+
+def get_xy_size_um(sizeXY):
     """
-    Map a raw sizeXY calibration value to a physical field size in micrometers.
+    Convert a ScanImage sizeXY calibration value to a physical field size in micrometers.
+
+    Uses the mesoscope calibration constant (157 µm / sizeXY unit), which is linear
+    through the origin and covers all FOV sizes without a lookup table.
 
     Parameters:
-        sizeXY (float): Calibration value from metadata.
-        tol (float): Tolerance for matching known calibration values.
+        sizeXY (float): sizeXY value from roi_groups_metadata.
 
     Returns:
-        int | None: Physical size (um) if matched (e.g., 400 or 700), else None.
+        float: Physical field size in µm.
     """
-    if abs(sizeXY - 2.547771) < tol:
-        return 400
-    elif abs(sizeXY - 4.458599) < tol:
-        return 700
-    else:
-        raise ValueError(f"Unrecognized sizeXY calibration value: {sizeXY}")
+    return sizeXY * _SCANIMAGE_UM_PER_SIZE_UNIT
 
 
 def get_cortical_zstack_reg_df(subject_ids):
@@ -250,7 +252,7 @@ def get_local_zstack_info(plane_path):
 
     sizeXY = utils.find_keys(roi_groups_metadata, 'sizeXY')[0][1][0]
     dimXY = utils.find_keys(roi_groups_metadata, 'pixelResolutionXY')[0][1][0]
-    size_xy_um = get_xy_size_um(sizeXY, dimXY)
+    size_xy_um = get_xy_size_um(sizeXY)
     resolution_xy_um = size_xy_um / dimXY
 
     z_step_size = float(utils.find_keys(scanimage_metadata, 'SI.hStackManager.actualStackZStepSize')[0][1])
