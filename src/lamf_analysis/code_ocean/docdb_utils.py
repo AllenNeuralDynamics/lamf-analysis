@@ -51,9 +51,10 @@ def get_project_session_infos_from_docdb(docdb_api_client=None,
                                  data_type='multiplane-ophys',
                                  filter_test_data=True,
                                  filter_by_genotype=True,
-                                 least_mouse_subject_id=755252):
+                                 least_mouse_subject_id=755252,
+                                 docdb_version="v1"):
     if docdb_api_client is None:
-        docdb_api_client = get_docdb_api_client()
+        docdb_api_client = get_docdb_api_client(version=docdb_version)
     match_query = {
         'data_description.data_level': 'raw',
         'subject.subject_id': {'$regex': r'^\d+$'},
@@ -99,9 +100,10 @@ def get_project_session_infos_from_docdb(docdb_api_client=None,
 def get_session_infos_from_docdb(subject_id, docdb_api_client=None,
                                  data_type='multiplane-ophys',
                                  filter_test_data=True,
-                                 filter_by_genotype=True):
+                                 filter_by_genotype=True,
+                                 docdb_version="v1"):
     if docdb_api_client is None:
-        docdb_api_client = get_docdb_api_client()
+        docdb_api_client = get_docdb_api_client(version=docdb_version)
     subject_id = str(subject_id)
     match_query = {
         'subject.subject_id': subject_id,
@@ -146,6 +148,49 @@ def get_session_infos_from_docdb(subject_id, docdb_api_client=None,
 
     if filter_test_data:
         session_infos = _filter_test_data(session_infos)
+
+    return session_infos
+
+
+def get_temporary_czstack_only_sessions(docdb_api_client=None):
+    """ Get sessions that are only cortical or structural zstack sessions, and are raw data.
+    This is a temporary function to get sessions that are only cortical or structural zstack sessions.
+    It only works with the v1 docdb."""
+    if docdb_api_client is None:
+        docdb_api_client = get_docdb_api_client(version='v1')
+    match_query = {
+            'data_description.data_level': 'raw',
+            'session.session_type': {"$in": ["cortical", "structural_zstack"]},
+        }
+    agg_pipeline = [
+            {
+                '$match': match_query
+            },
+            {
+                '$project': {
+                    '_id': 0,
+                    'subject_id': '$subject.subject_id',
+                    'acquisition_date': {'$substrBytes': ['$session.session_start_time', 0, 10]},
+                    'session_type': '$session.session_type',
+                    'rig_id': '$session.rig_id',
+                    'project_name': '$data_description.project_name',
+                    'raw_asset_name': '$name',
+                    'raw_asset_id': {'$arrayElemAt': ['$external_links.Code Ocean', 0]},
+                    's3_path': '$location',
+                    'genotype': '$subject.genotype',
+                }
+            },
+            {
+                '$limit': 10000
+            }
+        ]
+    results = docdb_api_client.aggregate_docdb_records(pipeline=agg_pipeline)
+    session_infos = pd.DataFrame(results)
+    if len(session_infos) == 0:
+        return None
+    session_infos['session_key'] = session_infos['subject_id'] + "_" + session_infos['acquisition_date']
+    session_infos.sort_values(by='acquisition_date', inplace=True)
+    session_infos.reset_index(drop=True, inplace=True)
 
     return session_infos
 
