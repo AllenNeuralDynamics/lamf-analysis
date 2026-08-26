@@ -363,11 +363,7 @@ def register_cortical_stack(zstack_path: Union[Path, str],
 
 
 def metadata_from_scanimage_tif(stack_path):
-    """Extract metadata from ScanImage tiff stack
-
-    Dev notes:
-    Seems awkward to parse this way
-    Depends on ScanImageTiffReader
+    """Extract metadata from ScanImage tiff stack.
 
     Parameters
     ----------
@@ -379,36 +375,28 @@ def metadata_from_scanimage_tif(stack_path):
     dict
         stack_metadata: important metadata extracted from scanimage tiff header
     dict
-        si_metadata: all scanimge metadata. Each value still a string, so convert if needed.
+        si_metadata: ScanImage SI.* parameters (values are typed, not strings)
     dict
-        roi_groups_dict: 
+        roi_groups_dict: ROI groups metadata
     """
-    with ScanImageTiffReader(str(stack_path)) as reader:
-        md_string = reader.metadata()
+    with TiffFile(str(stack_path)) as tif:
+        scanimage = tif.scanimage_metadata
 
-    # split si & roi groups, prep for seprate parse
-    s = md_string.split("\n{")
-    rg_str = "{" + s[1]
-    si_str = s[0]
+    si_metadata = scanimage['FrameData']
+    roi_groups_dict = scanimage['RoiGroups']
 
-    # parse 1: extract keys and values, dump, then load again
-    si_metadata = _extract_dict_from_si_string(si_str)
-    # parse 2: json loads works hurray
-    roi_groups_dict = json.loads(rg_str)
+    channels_saved = si_metadata['SI.hChannels.channelSave']
+    if not isinstance(channels_saved, list):
+        channels_saved = [int(cs) for cs in re.split(r'[\[\] ]+', str(channels_saved)) if cs.strip()]
 
     stack_metadata = {}
     stack_metadata['num_slices'] = int(si_metadata['SI.hStackManager.actualNumSlices'])
     stack_metadata['num_volumes'] = int(si_metadata['SI.hStackManager.actualNumVolumes'])
     stack_metadata['frames_per_slice'] = int(si_metadata['SI.hStackManager.framesPerSlice'])
-    # stack_metadata['z_steps'] = _str_to_int_list(si_metadata['SI.hStackManager.zs'])
-    stack_metadata['z_steps'] = _str_to_float_list(si_metadata['SI.hStackManager.zs'])
+    stack_metadata['z_steps'] = si_metadata['SI.hStackManager.zs']
     stack_metadata['actuator'] = si_metadata['SI.hStackManager.stackActuator']
-    # stack_metadata['num_channels'] = sum(_str_to_bool_list(si_metadata['SI.hPmts.powersOn']))
-    channels_saved = [ss for ss in re.split('\[|\]| ', si_metadata['SI.hChannels.channelSave']) if len(ss)>0]
-    channels_saved = [int(cs) for cs in channels_saved if str(int(cs)) == cs]
-    stack_metadata['num_channels'] = len(channels_saved) # TODO: need to check its validity in a larger batch of data
+    stack_metadata['num_channels'] = len(channels_saved)
     stack_metadata['channels_saved'] = channels_saved
-    # stack_metadata['z_step_size'] = int(si_metadata['SI.hStackManager.actualStackZStepSize'])
     stack_metadata['z_step_size'] = float(si_metadata['SI.hStackManager.actualStackZStepSize'])
 
     return stack_metadata, si_metadata, roi_groups_dict
