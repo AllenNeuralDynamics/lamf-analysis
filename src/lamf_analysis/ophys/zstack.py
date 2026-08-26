@@ -118,6 +118,35 @@ def deinterleave_channels(stack: np.ndarray,
     return stack_ref, stack_target
 
 
+def _load_averaged_loop_volumes(zstack_path, n_planes, n_volumes, n_channels):
+    """Load a multi-volume loop ScanImage TIFF and return the volume-averaged stack.
+
+    ScanImage loop-mode page order (2-ch example):
+        vol0_slice0_ch0, vol0_slice0_ch1, vol0_slice1_ch0, ..., vol0_sliceN_ch1,
+        vol1_slice0_ch0, ...
+
+    Returns:
+        n_channels == 1: float32 array (n_planes, H, W)
+        n_channels  > 1: float32 array (n_planes, n_channels, H, W)
+            so the downstream shape check `2 if len(stack.shape)==4 else 1` stays correct.
+    """
+    pages_per_vol = n_planes * n_channels
+    with TiffFile(str(zstack_path)) as tif:
+        page0 = tif.pages[0].asarray()
+        H, W = page0.shape
+        accum = np.zeros((pages_per_vol, H, W), dtype=np.float32)
+        for vol_idx in range(n_volumes):
+            base = vol_idx * pages_per_vol
+            vol = tif.asarray(key=range(base, base + pages_per_vol))
+            accum += vol
+    accum /= n_volumes
+    if n_channels > 1:
+        # pages are interleaved: [slice0_ch0, slice0_ch1, slice1_ch0, ...]
+        # reshape to (n_planes, n_channels, H, W)
+        return accum.reshape(n_planes, n_channels, H, W).astype(np.float32)
+    return accum.astype(np.float32)
+
+
 def register_cortical_stack(zstack_path: Union[Path, str],
                             save: bool = False,
                             output_dir: Path = None,
@@ -183,14 +212,7 @@ def register_cortical_stack(zstack_path: Union[Path, str],
         output_dir = output_dir / zstack_path.name.split('.')[0]
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1. load stack
-    print(f"Loading stack from: {zstack_path}")
-    new_time = time.time()
-
-    stack = imread(Path(zstack_path))
-    print(f"Stack shape: {stack.shape} read in {np.round(time.time() - new_time, 2)} s")
-
-    # 2. load and parse key metadata
+    # 1. load and parse key metadata first — needed to decide how to load the stack
     print("Parsing metadata...")
     new_time = time.time()
 
@@ -214,6 +236,23 @@ def register_cortical_stack(zstack_path: Union[Path, str],
         n_repeats_per_plane = stack_metadata['num_volumes']
 
     print(f"Metadata parsed in {np.round(time.time() - new_time, 2)} s")
+
+    # 2. load stack
+    # For many-volume loop acquisitions, averaging across volumes before loading avoids OOM:
+    # e.g. 450 slices × 100 volumes × 2 channels = 90 000 pages ≈ 135 GiB raw.
+    # Pre-averaging yields n_channels * n_slices pages at ~1.3 GiB; n_repeats_per_plane → 1.
+    print(f"Loading stack from: {zstack_path}")
+    new_time = time.time()
+
+    n_channels = stack_metadata.get('num_channels', 1)
+    if plane_order == 'loop' and n_repeats_per_plane > 1:
+        stack = _load_averaged_loop_volumes(zstack_path, n_planes, n_repeats_per_plane, n_channels)
+        n_repeats_per_plane = 1
+        stack_metadata['num_volumes'] = 1
+    else:
+        stack = imread(Path(zstack_path))
+
+    print(f"Stack shape: {stack.shape} read in {np.round(time.time() - new_time, 2)} s")
 
     # 3. Register Zstack
     reg_dicts = []  # Main list to store all results
