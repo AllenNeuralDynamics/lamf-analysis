@@ -313,6 +313,211 @@ def get_processed_data_info(subject_id, docdb_api_client=None):
     return results_df
 
 
+def get_latest_dff_processed_asset_for_raw_asset(raw_asset_name, dff_parameters=None,
+                                                  docdb_api_client=None):
+    """Return the newest plain processed asset for one raw asset with dF/F output.
+
+    Parameters
+    ----------
+    raw_asset_name : str
+        Canonical raw acquisition asset name, for example
+        ``multiplane-ophys_800792_2025-08-18_14-43-32``.
+    dff_parameters : dict, optional
+        Parameters required on *every* ``dF/F estimation`` process.  For the
+        reprocessed triexponential output, pass ``{"method": "triexp"}``.
+        With ``None`` (the default), any asset with a dF/F estimation process
+        is eligible.
+    docdb_api_client : MetadataDbClient, optional
+        Existing client, mainly useful for batching and tests.
+
+    Returns
+    -------
+    dict or None
+        ``raw_name``, ``processed_name``, ``processed_asset_id``,
+        ``processed_timestamp``, and ``dff_parameters`` for the newest match.
+        The strict asset-name pattern deliberately excludes behavior and
+        downstream derived assets that merely contain ``_processed_``.
+    """
+    if not isinstance(raw_asset_name, str) or not raw_asset_name:
+        raise ValueError("raw_asset_name must be a non-empty string")
+    if dff_parameters is not None and not isinstance(dff_parameters, dict):
+        raise TypeError("dff_parameters must be a dict or None")
+    if docdb_api_client is None:
+        # Processed ophys provenance currently resides in the v1 metadata index.
+        docdb_api_client = get_docdb_api_client(version="v1")
+
+    # A plain ophys processing asset ends at its processing timestamp.  This
+    # avoids matching, for example, behavior assets or derived GLM/coreg assets.
+    plain_processed_pattern = (
+        rf"^{re.escape(raw_asset_name)}_processed_"
+        r"\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$"
+    )
+    agg_pipeline = [
+        {
+            "$match": {
+                "name": {"$regex": plain_processed_pattern},
+                "processing.processing_pipeline.data_processes": {
+                    "$elemMatch": {"name": "dF/F estimation"},
+                },
+            }
+        },
+        {
+            "$project": {
+                "_id": 0,
+                "name": 1,
+                "code_ocean_id": {"$arrayElemAt": ["$external_links.Code Ocean", 0]},
+                "dff_processes": {
+                    "$filter": {
+                        "input": "$processing.processing_pipeline.data_processes",
+                        "as": "process",
+                        "cond": {"$eq": ["$$process.name", "dF/F estimation"]},
+                    }
+                },
+            }
+        },
+        {"$limit": 1000},
+    ]
+    candidates = docdb_api_client.aggregate_docdb_records(pipeline=agg_pipeline)
+
+    def parameters_match(candidate):
+        processes = candidate.get("dff_processes", [])
+        if not processes:
+            return False
+        return all(
+            all(process.get("parameters", {}).get(key) == value
+                for key, value in (dff_parameters or {}).items())
+            for process in processes
+        )
+
+    matches = [candidate for candidate in candidates if parameters_match(candidate)]
+    if not matches:
+        return None
+
+    timestamp_pattern = re.compile(r"_processed_(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})$")
+
+    def processed_timestamp(candidate):
+        match = timestamp_pattern.search(candidate["name"])
+        if match is None:  # Defensive: the DocDB query already enforces this.
+            raise ValueError(f"Unexpected processed asset name: {candidate['name']}")
+        return match.group(1)
+
+    latest = max(matches, key=processed_timestamp)
+    return {
+        "raw_name": raw_asset_name,
+        "processed_name": latest["name"],
+        "processed_asset_id": latest.get("code_ocean_id"),
+        "processed_timestamp": processed_timestamp(latest),
+        "dff_parameters": [process.get("parameters", {})
+                           for process in latest["dff_processes"]],
+    }
+
+
+def get_latest_dff_processed_assets_for_subject(subject_id, dff_parameters=None,
+                                                 docdb_api_client=None):
+    """Return one newest dF/F-processed ophys asset per raw session for a subject.
+
+    This is the subject-level counterpart to
+    :func:`get_latest_dff_processed_asset_for_raw_asset`.  A subject has
+    multiple raw acquisitions, so the result is a DataFrame with one row per
+    ``raw_name`` rather than one arbitrary asset for the entire subject.
+
+    Parameters
+    ----------
+    subject_id : str or int
+        Ophys subject identifier.
+    dff_parameters : dict, optional
+        Required parameters for every ``dF/F estimation`` process, for example
+        ``{"method": "triexp"}``.  With ``None``, any dF/F estimation is
+        accepted.
+    docdb_api_client : MetadataDbClient, optional
+        Existing client, mainly useful for batching and tests.
+
+    Returns
+    -------
+    pandas.DataFrame or None
+        One latest matching asset per raw ophys acquisition, with columns
+        ``subject_id``, ``raw_name``, ``processed_name``,
+        ``processed_asset_id``, ``processed_timestamp``, and
+        ``dff_parameters``.
+    """
+    subject_id = str(subject_id)
+    if not subject_id:
+        raise ValueError("subject_id must be non-empty")
+    if dff_parameters is not None and not isinstance(dff_parameters, dict):
+        raise TypeError("dff_parameters must be a dict or None")
+    if docdb_api_client is None:
+        docdb_api_client = get_docdb_api_client(version="v1")
+
+    # Restrict to plain ophys processing outputs.  Behavior assets and
+    # downstream derived assets cannot match this complete name shape.
+    plain_processed_pattern = (
+        rf"^multiplane-ophys_{re.escape(subject_id)}_"
+        r"\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}_processed_"
+        r"\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$"
+    )
+    agg_pipeline = [
+        {
+            "$match": {
+                "name": {"$regex": plain_processed_pattern},
+                "subject.subject_id": subject_id,
+                "processing.processing_pipeline.data_processes": {
+                    "$elemMatch": {"name": "dF/F estimation"},
+                },
+            }
+        },
+        {
+            "$project": {
+                "_id": 0,
+                "name": 1,
+                "code_ocean_id": {"$arrayElemAt": ["$external_links.Code Ocean", 0]},
+                "dff_processes": {
+                    "$filter": {
+                        "input": "$processing.processing_pipeline.data_processes",
+                        "as": "process",
+                        "cond": {"$eq": ["$$process.name", "dF/F estimation"]},
+                    }
+                },
+            }
+        },
+        {"$limit": 10000},
+    ]
+    candidates = docdb_api_client.aggregate_docdb_records(pipeline=agg_pipeline)
+
+    timestamp_pattern = re.compile(r"_processed_(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})$")
+    rows = []
+    for candidate in candidates:
+        processes = candidate.get("dff_processes", [])
+        if not processes or not all(
+            all(process.get("parameters", {}).get(key) == value
+                for key, value in (dff_parameters or {}).items())
+            for process in processes
+        ):
+            continue
+        match = timestamp_pattern.search(candidate["name"])
+        if match is None:  # Defensive: the DocDB query already enforces this.
+            continue
+        rows.append({
+            "subject_id": subject_id,
+            "raw_name": candidate["name"].split("_processed_", 1)[0],
+            "processed_name": candidate["name"],
+            "processed_asset_id": candidate.get("code_ocean_id"),
+            "processed_timestamp": match.group(1),
+            "dff_parameters": [process.get("parameters", {}) for process in processes],
+        })
+    if not rows:
+        return None
+
+    results = pd.DataFrame(rows)
+    latest = (
+        results.sort_values("processed_timestamp")
+        .groupby("raw_name", as_index=False)
+        .tail(1)
+        .sort_values("raw_name")
+        .reset_index(drop=True)
+    )
+    return latest
+
+
 def get_dlc_eye_data_info(subject_id, docdb_api_client=None):
     if docdb_api_client is None:
         docdb_api_client = get_docdb_api_client()
