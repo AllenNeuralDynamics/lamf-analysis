@@ -220,6 +220,10 @@ def get_dff_long_baseline_window(processed_asset_ids, docdb_api_client=None):
                 "_id": 1,
                 "name": 1,
                 "code_ocean_id": {"$arrayElemAt": ["$external_links.Code Ocean", 0]},  # Extract just the first Code Ocean ID as a string
+                # ``location`` is the asset's canonical S3 URI in DocDB.  Keep
+                # it with the asset identity so callers do not need to probe
+                # buckets by asset name.
+                "s3_path": "$location",
                 "df_f_params": {
                     "$filter": {
                         "input": "$processing.processing_pipeline.data_processes",
@@ -241,6 +245,7 @@ def get_dff_long_baseline_window(processed_asset_ids, docdb_api_client=None):
                 "_id": 1,
                 "name": 1,
                 "code_ocean_id": 1,  # Keep the Code Ocean IDs in the final projection
+                "s3_path": 1,
                 "long_window": {"$arrayElemAt": ["$df_f_params.parameters.long_window", 0]}
             }
         },
@@ -275,6 +280,7 @@ def get_processed_data_info(subject_id, docdb_api_client=None):
                 'name': 1,
                 '_id': 1,
                 "code_ocean_id": {"$arrayElemAt": ["$external_links.Code Ocean", 0]},
+                "s3_path": "$location",
                 'long_window': {
                     '$let': {
                         'vars': {
@@ -306,7 +312,7 @@ def get_processed_data_info(subject_id, docdb_api_client=None):
     if 'long_window' not in results_df.columns:
         results_df['long_window'] = None
 
-    results_df = results_df[['raw_name', 'long_window', 'code_ocean_id', 'processed_date', 'name']].rename(
+    results_df = results_df[['raw_name', 'long_window', 'code_ocean_id', 's3_path', 'processed_date', 'name']].rename(
         columns={'name': 'processed_name',
                  'code_ocean_id': 'processed_asset_id'})
 
@@ -333,8 +339,10 @@ def get_latest_dff_processed_asset_for_raw_asset(raw_asset_name, dff_parameters=
     Returns
     -------
     dict or None
-        ``raw_name``, ``processed_name``, ``processed_asset_id``,
+        ``raw_name``, ``processed_name``, ``processed_asset_id``, ``s3_path``,
         ``processed_timestamp``, and ``dff_parameters`` for the newest match.
+        ``s3_path`` is the DocDB-recorded S3 URI and may be ``None`` when the
+        metadata record has no location.
         The strict asset-name pattern deliberately excludes behavior and
         downstream derived assets that merely contain ``_processed_``.
     """
@@ -366,6 +374,7 @@ def get_latest_dff_processed_asset_for_raw_asset(raw_asset_name, dff_parameters=
                 "_id": 0,
                 "name": 1,
                 "code_ocean_id": {"$arrayElemAt": ["$external_links.Code Ocean", 0]},
+                "s3_path": "$location",
                 "dff_processes": {
                     "$filter": {
                         "input": "$processing.processing_pipeline.data_processes",
@@ -406,6 +415,7 @@ def get_latest_dff_processed_asset_for_raw_asset(raw_asset_name, dff_parameters=
         "raw_name": raw_asset_name,
         "processed_name": latest["name"],
         "processed_asset_id": latest.get("code_ocean_id"),
+        "s3_path": latest.get("s3_path"),
         "processed_timestamp": processed_timestamp(latest),
         "dff_parameters": [process.get("parameters", {})
                            for process in latest["dff_processes"]],
@@ -437,8 +447,9 @@ def get_latest_dff_processed_assets_for_subject(subject_id, dff_parameters=None,
     pandas.DataFrame or None
         One latest matching asset per raw ophys acquisition, with columns
         ``subject_id``, ``raw_name``, ``processed_name``,
-        ``processed_asset_id``, ``processed_timestamp``, and
-        ``dff_parameters``.
+        ``processed_asset_id``, ``s3_path``, ``processed_timestamp``, and
+        ``dff_parameters``. ``s3_path`` is the DocDB-recorded S3 URI and may
+        be null when unavailable.
     """
     subject_id = str(subject_id)
     if not subject_id:
@@ -470,6 +481,7 @@ def get_latest_dff_processed_assets_for_subject(subject_id, dff_parameters=None,
                 "_id": 0,
                 "name": 1,
                 "code_ocean_id": {"$arrayElemAt": ["$external_links.Code Ocean", 0]},
+                "s3_path": "$location",
                 "dff_processes": {
                     "$filter": {
                         "input": "$processing.processing_pipeline.data_processes",
@@ -501,6 +513,7 @@ def get_latest_dff_processed_assets_for_subject(subject_id, dff_parameters=None,
             "raw_name": candidate["name"].split("_processed_", 1)[0],
             "processed_name": candidate["name"],
             "processed_asset_id": candidate.get("code_ocean_id"),
+            "s3_path": candidate.get("s3_path"),
             "processed_timestamp": match.group(1),
             "dff_parameters": [process.get("parameters", {}) for process in processes],
         })
@@ -540,6 +553,7 @@ def get_dlc_eye_data_info(subject_id, docdb_api_client=None):
                 'name': 1,
                 '_id': 1,
                 'external_links': 1,
+                's3_path': '$location',
             }
         },
         {
@@ -549,12 +563,14 @@ def get_dlc_eye_data_info(subject_id, docdb_api_client=None):
 
     results = docdb_api_client.aggregate_docdb_records(pipeline=agg_pipeline)
 
+    if len(results) == 0:
+        return None
     results_df = pd.DataFrame(results)
     results_df['dlc_asset_id'] = results_df['external_links'].apply(lambda x: x['Code Ocean'][0])
     results_df['dlc_date'] = results_df['name'].str.split('_').str[-2]
     results_df['raw_name'] = results_df['name'].str.split('_dlc-eye_').str[0]
     
-    results_df = results_df[['raw_name', 'dlc_asset_id', 'dlc_date', 'name']].rename(columns={'name': 'dlc_name'})
+    results_df = results_df[['raw_name', 'dlc_asset_id', 's3_path', 'dlc_date', 'name']].rename(columns={'name': 'dlc_name'})
 
     return results_df
 
@@ -627,6 +643,7 @@ def get_derived_data_assets(subject_id, suffix,
                 "name": 1,
                 "code_ocean_id": {"$arrayElemAt": ["$external_links.Code Ocean", 0]},
                 "location": 1,
+                "s3_path": "$location",
                 "process": {
                     "$arrayElemAt": ["$processing.processing_pipeline.data_processes", 0]
                 }
@@ -645,6 +662,8 @@ def get_derived_data_assets(subject_id, suffix,
             base_project = {'name': 1,
                     '_id': 1,
                     'code_ocean_id': 1,
+                    'location': 1,
+                    's3_path': 1,
                     }
             updated_project = {**base_project, **project_params}
             append_pipeline = [
