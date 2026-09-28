@@ -169,6 +169,36 @@ def set_data_asset_params(subject_id, data_name='multiplane-ophys', tags=['raw']
     return data_asset_params
 
 
+def get_mouse_sessions_by_filters(subject_id, data_name='multiplane-ophys',
+                                  offset=0, limit=1000,
+                                  filter_test_data=False,
+                                  docdb_api_client=None):
+    """Return raw-session metadata for one subject from DocDB.
+
+    This is the DocDB-backed replacement for the former function of the same
+    name, which returned ``aind_session.Session`` objects.  It returns a
+    dataframe instead, with one raw session per row and session metadata,
+    Code Ocean raw-asset IDs, and DocDB-recorded S3 locations.
+
+    ``offset`` and ``limit`` retain their former pagination meaning after
+    DocDB filtering.  Set ``filter_test_data=True`` to apply the standard
+    test-session exclusion used by ``get_session_infos_from_docdb``.
+    """
+    session_df = docdb_utils.get_session_infos_from_docdb(
+        subject_id=subject_id,
+        docdb_api_client=docdb_api_client,
+        data_type=data_name,
+        filter_test_data=filter_test_data,
+        filter_by_genotype=False,
+        docdb_version="v1",
+    )
+    if session_df is None:
+        return pd.DataFrame()
+
+    end = None if limit is None else offset + limit
+    return session_df.iloc[offset:end].reset_index(drop=True)
+
+
 def get_derived_assets_df(subject_id, process_name,
                        data_name='multiplane-ophys',
                        offset=0, limit=1000,

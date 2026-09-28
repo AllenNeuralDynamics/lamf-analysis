@@ -574,7 +574,7 @@ def get_lp_eye_data_info(subject_id, docdb_api_client=None):
     DocDB-recorded S3 URI, LP-eye processing date, and derived asset name.
     """
     if docdb_api_client is None:
-        docdb_api_client = get_docdb_api_client()
+        docdb_api_client = get_docdb_api_client(version="v1")
     agg_pipeline = [
         {
             '$match': {

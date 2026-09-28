@@ -34,6 +34,115 @@ TIME_FORMAT = '[0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
 DATE_FORMAT = '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
 
 
+def get_mouse_session_df(subject_id, processed_date_after=None,
+                         processed_date_before=None, include_pupil=True,
+                         docdb_api_client=None):
+    """Return raw, latest dF/F, and optionally LP-eye assets for a mouse.
+
+    This DocDB-backed replacement preserves the useful dataframe interface of
+    the former ``aind_session`` implementation.  Each raw session is paired
+    with its newest asset containing dF/F estimation.  ``pupil_data_asset_id``
+    now refers to the LP-eye derived asset, replacing the legacy DLC-eye
+    column's source.  Provenance-only fields formerly supplied by
+    ``aind_session`` (``capsule_id``, ``commit_id``, and
+    ``num_provenence_data_assets``) are retained as missing values because
+    DocDB does not expose them.
+
+    Returns
+    -------
+    success : bool
+        True when every returned row has the required raw and processed asset,
+        plus LP-eye when ``include_pupil`` is true.
+    mouse_session_df : pandas.DataFrame
+        One row per raw session.  The legacy asset-ID column names are kept so
+        the result remains usable with ``attach_mouse_data_assets``.
+    """
+    if docdb_api_client is None:
+        docdb_api_client = docdb_utils.get_docdb_api_client(version="v1")
+
+    raw_df = cou.get_mouse_sessions_by_filters(
+        subject_id=subject_id,
+        filter_test_data=False,
+        docdb_api_client=docdb_api_client,
+    )
+    if raw_df.empty:
+        return False, raw_df
+
+    processed_df = docdb_utils.get_latest_dff_processed_assets_for_subject(
+        subject_id=subject_id,
+        docdb_api_client=docdb_api_client,
+    )
+    if processed_df is None:
+        processed_df = pd.DataFrame(columns=[
+            'raw_name', 'processed_name', 'processed_asset_id', 's3_path',
+            'processed_timestamp', 'dff_parameters',
+        ])
+
+    raw_df = raw_df.rename(columns={
+        'raw_asset_id': 'raw_data_asset_id',
+        's3_path': 'raw_s3_path',
+    })
+    processed_df = processed_df.rename(columns={'s3_path': 'processed_s3_path'})
+    mouse_session_df = raw_df.merge(
+        processed_df,
+        how='left',
+        left_on='raw_asset_name',
+        right_on='raw_name',
+    )
+    mouse_session_df['processed_data_asset_id'] = mouse_session_df['processed_asset_id']
+    mouse_session_df['raw_data_date'] = mouse_session_df['acquisition_date']
+    mouse_session_df['processed_data_date'] = mouse_session_df['processed_timestamp'].str[:10]
+
+    if include_pupil:
+        pupil_df = docdb_utils.get_lp_eye_data_info(
+            subject_id=subject_id,
+            docdb_api_client=docdb_api_client,
+        )
+        if pupil_df is None:
+            pupil_df = pd.DataFrame(columns=[
+                'raw_name', 'lp_asset_id', 's3_path', 'lp_date', 'lp_name',
+            ])
+        else:
+            pupil_df = (
+                pupil_df.sort_values('lp_name')
+                .groupby('raw_name', as_index=False)
+                .tail(1)
+                .rename(columns={'s3_path': 'lp_s3_path'})
+            )
+        mouse_session_df = mouse_session_df.merge(
+            pupil_df,
+            how='left',
+            left_on='raw_asset_name',
+            right_on='raw_name',
+            suffixes=('', '_lp'),
+        )
+        # Keep the legacy missing-eye sentinel for callers that previously
+        # checked this column for zero.
+        mouse_session_df['pupil_data_asset_id'] = mouse_session_df['lp_asset_id'].fillna(0)
+
+    if processed_date_after is not None:
+        mouse_session_df = mouse_session_df[
+            mouse_session_df['processed_data_date'] >= processed_date_after
+        ]
+    if processed_date_before is not None:
+        mouse_session_df = mouse_session_df[
+            mouse_session_df['processed_data_date'] <= processed_date_before
+        ]
+
+    mouse_session_df['capsule_id'] = pd.NA
+    mouse_session_df['commit_id'] = pd.NA
+    mouse_session_df['num_provenence_data_assets'] = pd.NA
+    mouse_session_df['num_raw_data_asset_ids'] = 1
+
+    required_columns = ['raw_data_asset_id', 'processed_data_asset_id']
+    if include_pupil:
+        required_columns.append('pupil_data_asset_id')
+    success = bool(mouse_session_df[required_columns].notna().all().all())
+    if include_pupil:
+        success = success and bool((mouse_session_df['pupil_data_asset_id'] != 0).all())
+    return success, mouse_session_df.reset_index(drop=True)
+
+
 def add_dff_long_baseline_window_to_mouse_df(mouse_df):
     processed_asset_ids = mouse_df.processed_data_asset_id.to_list()
     dff_long_windows = docdb_utils.get_dff_long_baseline_window(processed_asset_ids)
