@@ -9,7 +9,7 @@ import skimage
 import scipy
 import pandas as pd
 import cv2
-from aind_ophys_utils.motion_border_utils import get_max_correction_from_df
+from lamf_analysis.ophys.motion_border_utils import get_max_correction_from_df
 
 
 ####################################################################################################
@@ -111,8 +111,6 @@ def get_motion_correction_crop_xy_range(plane_path: Union[Path, str]) -> tuple:
     """Get x-y ranges to crop motion-correction frame rolling
 
     # TODO: validate in case where max < 0 or min > 0, which may exist (JK 2023)
-    # TODO: use motion_border utils from aind_ophys_utils (04/2024)
-
     Parameters
     ----------
     plane_path : Path

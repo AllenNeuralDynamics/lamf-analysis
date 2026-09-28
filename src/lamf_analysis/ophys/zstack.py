@@ -17,7 +17,6 @@ import scipy
 import seaborn as sns
 import skimage
 from PIL import Image, ImageDraw, ImageFont
-from ScanImageTiffReader import ScanImageTiffReader
 from tifffile import TiffFile, imread, imwrite
 from tqdm import tqdm
 
@@ -481,17 +480,16 @@ def register_local_zstack_from_raw_tif(zstack_path: Union[Path, str]):
     num_channels = stack_metadata['num_channels'] # TODO: need to check its validity in a larger batch of data
     channels_saved = stack_metadata['channels_saved']
 
-    cz_reader = ScanImageTiffReader(str(zstack_path))
-    total_num_frames = cz_reader.shape()[0]
+    try:
+        with TiffFile(str(zstack_path)) as tif:
+            total_num_frames = len(tif.pages)
+            # Explicit page selection preserves all pages in a multi-page
+            # stack; ``imread(path)`` and ``tif.asarray()`` can otherwise
+            # select only the first series/page.
+            data = tif.asarray(key=range(total_num_frames))
+    except Exception as exc:
+        raise ValueError(f"Failed to read data from TIFF file: {zstack_path}") from exc
     assert total_num_frames == num_slices * num_volumes * num_channels
-
-    try: 
-        data = cz_reader.data() # sometimes it fails to read the data (maybe after an update in scanimage?)
-    except:
-        try: 
-            data = imread(zstack_path) # from recent data (12/16/2024) result shape lengths is 4 for multi-channel, instead of 3
-        except:
-            raise ValueError("Failed to read data from tiff file")
     if num_channels == 1:
         zstack_reg = _register_stack(data, total_num_frames, num_slices)
     elif num_channels > 0:
@@ -980,7 +978,6 @@ def normalize_stack_unit8(stack):
     np.array
         Normalized stack
 
-    TODO: use core utils (aind-ophys-utils) (4/2024)
     """
     norm_stack = []
 

@@ -14,8 +14,6 @@ from codeocean.data_asset import (DataAssetSearchParams,
                                   DataAssetAttachParams)
 from codeocean.components import SearchFilter
 
-import aind_session
-from aind_session import Session
 from comb.behavior_ophys_dataset import BehaviorOphysDataset, BehaviorMultiplaneOphysDataset
 from comb import file_handling
 from comb.processing.sync.sync_utilities import get_synchronized_frame_times
@@ -32,110 +30,8 @@ import lamf_analysis.ophys.zstack as zstack
 import logging
 logger = logging.getLogger(__name__)
 
-DEFAULT_MOUNT_TO_IGNORE = ['fb4b5cef-4505-4145-b8bd-e41d6863d7a9', # Ophys_Extension_schema_10_14_2024_13_44
-                            '35d1284e-4dfa-4ac3-9ba8-5ea1ae2fdaeb'], # ROI classifier V1
 TIME_FORMAT = '[0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
 DATE_FORMAT = '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
-
-
-def get_mouse_session_df(subject_id,
-                         processed_date_after=None,
-                         processed_date_before=None,
-                         include_pupil=True):
-    ''' Get mouse session dataframe.
-    Using aind_session, it first querys all sessions for a mouse (raw and derived data all matched to the raw session),
-        potentially filters by processed_date_after and processed_date_before,
-        and then filters by include_pupil.
-    Resulting dataframe has the following columns:
-        raw_data_date, processed_data_date, capsule_id, commit_id, processed_data_asset_id, raw_data_asset_id, num_provenence_data_assets, pupil_data_asset_id
-        * capsule_id and commit_id can be used to filter (hopefully using look-up table)
-    '''
-    success = True
-    # mouse_sessions = aind_session.get_sessions(subject_id=subject_id) # This errors out with "unauthorized issue"
-    # Temporary fix while awaiting SciComp solution 2025/09/30 JK
-    mouse_sessions = cou.get_mouse_sessions_by_filters(subject_id=subject_id)
-    # to prevent errors (happens when adding faulty tags)
-    mouse_sessions = tuple([ms for ms in mouse_sessions if ms.subject_id == str(subject_id)])
-
-    raw_data_date_list = []
-    processed_data_date_list = []
-    capsule_ids_list = []
-    commit_ids_list = []
-    processed_data_asset_ids_list = []
-    raw_data_asset_ids_list = []
-    
-    num_provenence_data_assets_list = []
-    if include_pupil:
-        pupil_data_asset_ids_list = []
-    for session in mouse_sessions:
-        try: 
-            data_name = session.raw_data_asset.name
-        except:
-            continue
-        if 'multiplane-ophys' not in data_name:
-            continue
-        raw_date = session.raw_data_asset.name.split('_')[2] 
-        processed_data = [da for da in session.data_assets if '_processed_' in da.name]
-        # processed_data = [da for da in processed_data if (da.provenance.commit is not None)]
-        if include_pupil:
-            pupil_data = [da for da in session.data_assets if 'dlc-eye' in da.name]
-            pupil_raw_data = [np.setdiff1d(da.provenance.data_assets, DEFAULT_MOUNT_TO_IGNORE) for da in pupil_data]
-
-        processed_data_dates = [da.name.split('_processed_')[1].split('_')[0] for da in processed_data]
-        capsule_ids = [da.provenance.capsule for da in processed_data]
-        commit_ids = [da.provenance.commit for da in processed_data]
-        data_asset_ids = [da.id for da in processed_data]
-        raw_data_asset_ids = [np.setdiff1d(da.provenance.data_assets, DEFAULT_MOUNT_TO_IGNORE) for da in processed_data]
-        num_provenence_data_assets = [len(da.provenance.data_assets) for da in processed_data]
-        for i in range(len(processed_data)):
-            if processed_date_after is not None:
-                if processed_data_dates[i] < processed_date_after:
-                    continue
-            if processed_date_before is not None:
-                if processed_data_dates[i] > processed_date_before:
-                    continue
-
-            raw_data_asset_id = raw_data_asset_ids[i]
-
-            if include_pupil:
-                matching_pupil_data_ind = np.where([raw_data_asset_id in pupil_raw_data[j] for j in range(len(pupil_raw_data))])[0]
-                if len(matching_pupil_data_ind) == 1:
-                    pupil_data_asset_ids_list.append(pupil_data[matching_pupil_data_ind[0]].id)
-                elif len(matching_pupil_data_ind) == 0:
-                    pupil_data_asset_ids_list.append(0)
-                else:
-                    raise ValueError(f'More than one matching pupil data asset found for {raw_data_asset_id} from {session}')
-
-            raw_data_date_list.append(raw_date)
-            capsule_ids_list.append(capsule_ids[i])
-            commit_ids_list.append(commit_ids[i])
-            processed_data_asset_ids_list.append(data_asset_ids[i])
-            processed_data_date_list.append(processed_data_dates[i])
-            raw_data_asset_ids_list.append(raw_data_asset_id)
-            num_provenence_data_assets_list.append(num_provenence_data_assets[i])
-    mouse_session_df = pd.DataFrame({'raw_data_date': raw_data_date_list,
-                                        'processed_data_date': processed_data_date_list,
-                                        'capsule_id': capsule_ids_list,
-                                        'commit_id': commit_ids_list,
-                                        'processed_data_asset_id': processed_data_asset_ids_list,
-                                        'raw_data_asset_id': raw_data_asset_ids_list,
-                                        'num_provenence_data_assets': num_provenence_data_assets_list})
-    if include_pupil:
-        mouse_session_df['pupil_data_asset_id'] = pupil_data_asset_ids_list
-
-    mouse_session_df['num_raw_data_asset_ids'] = mouse_session_df['raw_data_asset_id'].apply(len)
-    if np.all(mouse_session_df['num_raw_data_asset_ids'].values == 1):
-        mouse_session_df['raw_data_asset_id'] = mouse_session_df['raw_data_asset_id'].apply(lambda x: x[0])
-    else:
-        success = False
-        warnings.warn('Multiple raw data asset ids found for a single processed data asset id')
-    
-    if include_pupil:
-        if np.any(mouse_session_df['pupil_data_asset_id'].values == 0):
-            success = False
-            warnings.warn(f'No matching pupil data asset found for {mouse_session_df[mouse_session_df["pupil_data_asset_id"] == 0].raw_data_date.values}')
-        
-    return success, mouse_session_df
 
 
 def add_dff_long_baseline_window_to_mouse_df(mouse_df):
@@ -238,7 +134,7 @@ def get_cortical_zstack_sessions(subject_id,
 def attach_mouse_data_assets(mouse_session_df, include_pupil=True,
                              co_client=None):
     ''' Attach mouse data assets to mouse session dataframe.
-    Built to use the results from get_mouse_session_df.
+    The dataframe must provide raw and processed Code Ocean asset IDs.
     Returns if successful.
     '''
     if co_client is None:
