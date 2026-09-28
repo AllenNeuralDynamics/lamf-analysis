@@ -531,13 +531,18 @@ def get_latest_dff_processed_assets_for_subject(subject_id, dff_parameters=None,
     return latest
 
 
-def get_dlc_eye_data_info(subject_id, docdb_api_client=None):
+def get_lp_eye_data_info(subject_id, docdb_api_client=None):
+    """Return LP-eye derived asset information for a subject.
+
+    The returned table includes the linked raw asset name, Code Ocean asset ID,
+    DocDB-recorded S3 URI, LP-eye processing date, and derived asset name.
+    """
     if docdb_api_client is None:
         docdb_api_client = get_docdb_api_client()
     agg_pipeline = [
         {
             '$match': {
-                'name': {'$regex': 'dlc-eye', '$options': 'i'},
+                'name': {'$regex': 'lp-eye', '$options': 'i'},
                 # 'processing.processing_pipeline.data_processes': {
                 #     '$exists': True,
                 #     '$elemMatch': {
@@ -566,11 +571,11 @@ def get_dlc_eye_data_info(subject_id, docdb_api_client=None):
     if len(results) == 0:
         return None
     results_df = pd.DataFrame(results)
-    results_df['dlc_asset_id'] = results_df['external_links'].apply(lambda x: x['Code Ocean'][0])
-    results_df['dlc_date'] = results_df['name'].str.split('_').str[-2]
-    results_df['raw_name'] = results_df['name'].str.split('_dlc-eye_').str[0]
+    results_df['lp_asset_id'] = results_df['external_links'].apply(lambda x: x['Code Ocean'][0])
+    results_df['lp_date'] = results_df['name'].str.split('_').str[-2]
+    results_df['raw_name'] = results_df['name'].str.split('_lp-eye_').str[0]
     
-    results_df = results_df[['raw_name', 'dlc_asset_id', 's3_path', 'dlc_date', 'name']].rename(columns={'name': 'dlc_name'})
+    results_df = results_df[['raw_name', 'lp_asset_id', 's3_path', 'lp_date', 'name']].rename(columns={'name': 'lp_name'})
 
     return results_df
 
