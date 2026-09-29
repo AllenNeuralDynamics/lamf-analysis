@@ -10,7 +10,7 @@ setup(
     author='Matthew J. Davis',
     author_email='mattjdavis@gmail.com',
     description='TODO',
-    python_requires='>=3.11,<3.13',
+    python_requires='>=3.11,<3.14',
     package_dir={'': 'src'},
     packages=find_packages(where='src'),
     install_requires=requirements,
