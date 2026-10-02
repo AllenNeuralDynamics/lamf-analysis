@@ -59,19 +59,18 @@ def get_max_correction_values(
     down_shift = -1 * y_no_outliers.min()
     up_shift = y_no_outliers.max()
 
-    max_shift = MaxFrameShift(
+    max_correction = MaxFrameShift(
         left=left_shift, right=right_shift, up=up_shift, down=down_shift
     )
 
     # check if all exist
-    if np.any(np.isnan(np.array(max_shift))):
+    if np.any(np.isnan(np.array(max_correction))):
         raise ValueError(
-            "One or more motion correction shifts "
-            "was found to be Nan, max shift found: "
-            f"{max_shift}, with max_shift {max_shift}"
+            "One or more motion correction shifts was found to be NaN, max shift found: "
+            f"{max_correction}, with max_shift {max_shift}"
         )
 
-    return max_shift
+    return max_correction
 
 
 def get_max_correction_from_df(
