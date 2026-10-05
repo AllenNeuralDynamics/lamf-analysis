@@ -17,9 +17,6 @@ from codeocean.data_asset import (DataAssetSearchParams,
                                   DataAssetAttachParams)
 from codeocean.components import SearchFilter
 
-import aind_session
-from aind_session import Session
-
 from lamf_analysis.code_ocean import capsule_bod_utils as cbu
 import lamf_analysis.utils as lamf_utils
 from lamf_analysis.code_ocean import docdb_utils
@@ -27,12 +24,6 @@ from lamf_analysis.code_ocean import s3_utils
 
 import logging
 logger = logging.getLogger(__name__)
-
-DEFAULT_MOUNT_TO_IGNORE = ['fb4b5cef-4505-4145-b8bd-e41d6863d7a9', # Ophys_Extension_schema_10_14_2024_13_44
-                            '35d1284e-4dfa-4ac3-9ba8-5ea1ae2fdaeb'], # ROI classifier V1
-TIME_FORMAT = '[0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
-DATE_FORMAT = '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
-
 
 def get_co_client():
     domain="https://codeocean.allenneuraldynamics.org/"
@@ -179,270 +170,33 @@ def set_data_asset_params(subject_id, data_name='multiplane-ophys', tags=['raw']
 
 
 def get_mouse_sessions_by_filters(subject_id, data_name='multiplane-ophys',
-                                  offset=0, limit=1000):
-    client = get_co_client()
+                                  offset=0, limit=1000,
+                                  filter_test_data=False,
+                                  docdb_api_client=None):
+    """Return raw-session metadata for one subject from DocDB.
 
-    results = []
-    while True:
-        data_asset_params = set_data_asset_params(subject_id=subject_id, 
-                                                  data_name=data_name, tags=['raw'],
-                                                  offset=offset, limit=limit)
-        data_asset_search_results = client.data_assets.search_data_assets(data_asset_params)
-        results.extend(data_asset_search_results.results)
-        if not data_asset_search_results.has_more:
-            break
-        data_asset_params.offset += data_asset_params.limit
-    
-    sessions = set()
-    for result in results:
-        name = result.name
-        if '_multisession' in name:
-            continue
-        session = Session(name)
-        sessions.add(session)
-    sessions = tuple(sorted(sessions, key=lambda s: s.dt))
-    return sessions
+    This is the DocDB-backed replacement for the former function of the same
+    name, which returned ``aind_session.Session`` objects.  It returns a
+    dataframe instead, with one raw session per row and session metadata,
+    Code Ocean raw-asset IDs, and DocDB-recorded S3 locations.
 
-
-def _get_session_type(session):
-    try:
-        return session.docdb['session']['session_type']
-    except Exception:
-        return None
-
-
-def _is_test_session(session_type):
-    if not isinstance(session_type, str):
-        return False
-    return 'test' in session_type.lower()
-
-
-def _extract_processed_date(asset_name):
-    date_matches = re.findall(DATE_FORMAT + '_' + TIME_FORMAT, asset_name)
-    if len(date_matches) == 0:
-        return None
-    return date_matches[-1]
-
-
-def _data_asset_has_required_files(data_asset_id, required_file_substrings=('dff', 'data_description.json', 'session.json')):
-    required_file_substrings = list(required_file_substrings or [])
-    if len(required_file_substrings) == 0:
-        return True
-    try:
-        s3_path = str(aind_session.utils.get_source_dir_by_name(data_asset_id))
-        files_list = s3_utils.list_files_from_s3_location(s3_path)
-    except Exception as exc:
-        warnings.warn(f"Unable to list files for data asset {data_asset_id}: {exc}")
-        return False
-    has_all_required = all(
-        any(check_name in file for file in files_list)
-        for check_name in required_file_substrings
-    )
-    return bool(has_all_required)
-
-
-def get_session_infos_from_aind_session(subject_id,
-                                        data_name='multiplane-ophys',
-                                        filter_test_data=True,
-                                        offset=0,
-                                        limit=1000):
-    sessions = get_mouse_sessions_by_filters(
+    ``offset`` and ``limit`` retain their former pagination meaning after
+    DocDB filtering.  Set ``filter_test_data=True`` to apply the standard
+    test-session exclusion used by ``get_session_infos_from_docdb``.
+    """
+    session_df = docdb_utils.get_session_infos_from_docdb(
         subject_id=subject_id,
-        data_name=data_name,
-        offset=offset,
-        limit=limit,
-    )
-
-    rows = []
-    for session in sessions:
-        session_type = _get_session_type(session)
-        if filter_test_data and _is_test_session(session_type):
-            continue
-        raw_data_asset = getattr(session, 'raw_data_asset', None)
-        if raw_data_asset is None:
-            continue
-
-        acquisition_date = session.dt.strftime('%Y-%m-%d') if hasattr(session, 'dt') else None
-        rows.append({
-            'subject_id': str(subject_id),
-            'acquisition_date': acquisition_date,
-            'session_type': session_type,
-            'raw_asset_name': raw_data_asset.name,
-            'raw_asset_id': raw_data_asset.id,
-            'session_key': f"{subject_id}_{acquisition_date}" if acquisition_date is not None else None,
-        })
-
-    session_infos = pd.DataFrame(rows,
-                                 columns=['subject_id',
-                                          'acquisition_date',
-                                          'session_type',
-                                          'raw_asset_name',
-                                          'raw_asset_id',
-                                          'session_key'])
-    if len(session_infos) == 0:
-        return session_infos
-    session_infos = session_infos.sort_values('acquisition_date').reset_index(drop=True)
-    session_infos['session_type_exposures'] = session_infos.groupby('session_type').cumcount() + 1
-    return session_infos
-
-
-def get_processed_data_info_from_aind_session(subject_id,
-                                              data_name='multiplane-ophys',
-                                              filter_test_data=True,
-                                              required_file_substrings=('dff', 'data_description.json', 'session.json'),
-                                              processed_name_substring='_processed_',
-                                              return_all_candidates=True,
-                                              offset=0,
-                                              limit=1000):
-    sessions = get_mouse_sessions_by_filters(
-        subject_id=subject_id,
-        data_name=data_name,
-        offset=offset,
-        limit=limit,
-    )
-
-    processed_rows = []
-    for session in sessions:
-        session_type = _get_session_type(session)
-        if filter_test_data and _is_test_session(session_type):
-            continue
-
-        raw_data_asset = getattr(session, 'raw_data_asset', None)
-        if raw_data_asset is None:
-            continue
-        raw_name = raw_data_asset.name
-
-        processed_candidates = [
-            da for da in getattr(session, 'data_assets', [])
-            if processed_name_substring in da.name
-        ]
-        if len(processed_candidates) == 0:
-            continue
-
-        processed_candidates = sorted(
-            processed_candidates,
-            key=lambda da: da.name,
-            reverse=True,
-        )
-
-        valid_candidates = [
-            da for da in processed_candidates
-            if _data_asset_has_required_files(da.id, required_file_substrings)
-        ]
-        if len(valid_candidates) == 0:
-            continue
-
-        if not return_all_candidates:
-            valid_candidates = [valid_candidates[0]]
-
-        for da in valid_candidates:
-            dff_parameters = get_process_parameters(da.id, "dF/F estimation")
-            if 'long_window' in dff_parameters.keys():
-                long_window = dff_parameters['long_window']
-            else:
-                long_window = None
-            processed_rows.append({
-                'raw_name': raw_name,
-                'long_window': long_window,
-                'processed_asset_id': da.id,
-                'processed_date': _extract_processed_date(da.name),
-                'processed_name': da.name,
-            })
-
-    processed_df = pd.DataFrame(processed_rows,
-                                columns=['raw_name',
-                                         'long_window',
-                                         'processed_asset_id',
-                                         'processed_date',
-                                         'processed_name'])
-    return processed_df
-
-
-def get_raw_and_processed_dfs_from_aind_session(subject_id,
-                                                data_name='multiplane-ophys',
-                                                filter_test_data=True,
-                                                required_file_substrings=('dff', 'data_description.json', 'session.json'),
-                                                processed_name_substring='_processed_',
-                                                return_all_candidates=True,
-                                                offset=0,
-                                                limit=1000):
-    raw_df = get_session_infos_from_aind_session(
-        subject_id=subject_id,
-        data_name=data_name,
-        filter_test_data=filter_test_data,
-        offset=offset,
-        limit=limit,
-    )
-    processed_df = get_processed_data_info_from_aind_session(
-        subject_id=subject_id,
-        data_name=data_name,
-        filter_test_data=filter_test_data,
-        required_file_substrings=required_file_substrings,
-        processed_name_substring=processed_name_substring,
-        return_all_candidates=return_all_candidates,
-        offset=offset,
-        limit=limit,
-    )
-    merged_df = raw_df.merge(
-        processed_df,
-        left_on='raw_asset_name',
-        right_on='raw_name',
-        how='outer',
-    )
-    return raw_df, processed_df, merged_df
-
-
-def get_aind_session_docdb_comparison_dfs(subject_id,
-                                          data_name='multiplane-ophys',
-                                          filter_test_data=True,
-                                          required_file_substrings=('dff', 'data_description.json', 'session.json'),
-                                          processed_name_substring='_processed_',
-                                          return_all_candidates=True,
-                                          offset=0,
-                                          limit=1000):
-    raw_aind_df, processed_aind_df, merged_aind_df = get_raw_and_processed_dfs_from_aind_session(
-        subject_id=subject_id,
-        data_name=data_name,
-        filter_test_data=filter_test_data,
-        required_file_substrings=required_file_substrings,
-        processed_name_substring=processed_name_substring,
-        return_all_candidates=return_all_candidates,
-        offset=offset,
-        limit=limit,
-    )
-
-    raw_docdb_df = docdb_utils.get_session_infos_from_docdb(
-        subject_id=subject_id,
+        docdb_api_client=docdb_api_client,
         data_type=data_name,
         filter_test_data=filter_test_data,
+        filter_by_genotype=False,
+        docdb_version="v1",
     )
-    if raw_docdb_df is None:
-        raw_docdb_df = pd.DataFrame(columns=['raw_asset_name'])
+    if session_df is None:
+        return pd.DataFrame()
 
-    processed_docdb_df = docdb_utils.get_processed_data_info(subject_id)
-    if processed_docdb_df is None:
-        processed_docdb_df = pd.DataFrame(columns=['raw_name',
-                                                   'long_window',
-                                                   'processed_asset_id',
-                                                   'processed_date',
-                                                   'processed_name'])
-
-    merged_docdb_df = raw_docdb_df.merge(
-        processed_docdb_df,
-        left_on='raw_asset_name',
-        right_on='raw_name',
-        how='outer',
-    )
-
-    return {
-        'raw_aind_df': raw_aind_df,
-        'processed_aind_df': processed_aind_df,
-        'merged_aind_df': merged_aind_df,
-        'raw_docdb_df': raw_docdb_df,
-        'processed_docdb_df': processed_docdb_df,
-        'merged_docdb_df': merged_docdb_df,
-    }
-
+    end = None if limit is None else offset + limit
+    return session_df.iloc[offset:end].reset_index(drop=True)
 
 
 def get_derived_assets_df(subject_id, process_name,
@@ -486,8 +240,9 @@ def get_derived_assets_df(subject_id, process_name,
                                             'derived_date',
                                             'derived_time'])
     if add_s3_location:
-        derived_asset_df['s3_path'] = derived_asset_df['derived_asset_id'].apply(
-            aind_session.utils.get_source_dir_by_name)
+        s3_paths = docdb_utils.get_s3_paths_for_code_ocean_assets(
+            derived_asset_df['derived_asset_id'].tolist())
+        derived_asset_df['s3_path'] = derived_asset_df['derived_asset_id'].map(s3_paths)
     return derived_asset_df
 
 
@@ -499,10 +254,11 @@ def get_derived_assets(subject_id, process_name,
     client = get_co_client()
     tags = ['derived', process_name]
     results = []
+    search_offset = offset
     while True:
         data_asset_params = set_data_asset_params(subject_id=subject_id, 
                                                   data_name=data_name, tags=tags,
-                                                  offset=offset, limit=limit)
+                                                  offset=search_offset, limit=limit)
         data_asset_search_results = client.data_assets.search_data_assets(data_asset_params)
         if processing_parameters is not None:
             assert subprocessing_name is not None, "Must specify subprocessing_name when filtering by processing_parameters"
@@ -517,7 +273,7 @@ def get_derived_assets(subject_id, process_name,
             results.extend(data_asset_search_results.results)
         if not data_asset_search_results.has_more:
             break
-        data_asset_params.offset += data_asset_params.limit
+        search_offset += limit
     return results
 
 

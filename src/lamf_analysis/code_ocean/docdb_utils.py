@@ -28,6 +28,42 @@ def get_docdb_api_client(version: str = "v2") -> MetadataDbClient:
     return docdb_api_client
 
 
+def get_s3_paths_for_code_ocean_assets(asset_ids, docdb_api_client=None):
+    """Return DocDB-recorded S3 URIs keyed by Code Ocean asset ID.
+
+    Assets with no DocDB record or no recorded location are omitted. This is a
+    metadata lookup rather than a probe of a fixed list of S3 buckets, so it
+    works for both open-data and Code Ocean result assets.
+    """
+    asset_ids = [str(asset_id) for asset_id in asset_ids if asset_id is not None]
+    if not asset_ids:
+        return {}
+    if docdb_api_client is None:
+        docdb_api_client = get_docdb_api_client(version="v1")
+
+    results = docdb_api_client.aggregate_docdb_records(pipeline=[
+        {
+            "$match": {
+                "external_links.Code Ocean": {"$in": asset_ids},
+                "location": {"$exists": True, "$ne": None},
+            }
+        },
+        {
+            "$project": {
+                "_id": 0,
+                "code_ocean_id": {"$arrayElemAt": ["$external_links.Code Ocean", 0]},
+                "s3_path": "$location",
+            }
+        },
+        {"$limit": len(asset_ids)},
+    ])
+    return {
+        result["code_ocean_id"]: result["s3_path"]
+        for result in results
+        if result.get("code_ocean_id") and result.get("s3_path")
+    }
+
+
 def get_session_info_for_session_key(session_key, docdb_api_client=None,
                                  data_type='multiplane-ophys'):
     # Validate session_key format: must be 'subjectid_date' (exactly one underscore)
@@ -538,7 +574,7 @@ def get_lp_eye_data_info(subject_id, docdb_api_client=None):
     DocDB-recorded S3 URI, LP-eye processing date, and derived asset name.
     """
     if docdb_api_client is None:
-        docdb_api_client = get_docdb_api_client()
+        docdb_api_client = get_docdb_api_client(version="v1")
     agg_pipeline = [
         {
             '$match': {

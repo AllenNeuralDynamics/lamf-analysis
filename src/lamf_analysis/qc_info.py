@@ -2,7 +2,7 @@ from dataclasses import dataclass, asdict
 from typing import Optional, Any, Dict, List, Union, Tuple
 from pathlib import Path
 import json, os, uuid
-from datetime import datetime
+from datetime import datetime, timezone
 import boto3, botocore
 from lamf_analysis.code_ocean import docdb_utils
 
@@ -264,7 +264,7 @@ class QCStore:
 
         entry = QCEntry(
             id=str(uuid.uuid4()),
-            timestamp=datetime.utcnow().isoformat(timespec="seconds") + "Z",
+            timestamp=datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
             session_key=session_key,
             qc_type=qc_type,
             level=level,
@@ -303,7 +303,7 @@ class QCStore:
             raise ValueError(f"Original QCEntry id '{original_id}' not found")
         amend = AmendmentEntry(
             id=str(uuid.uuid4()),
-            timestamp=datetime.utcnow().isoformat(timespec="seconds") + "Z",
+            timestamp=datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
             entry_type="amendment",
             target_id=original_id,
             action=action,
@@ -475,7 +475,7 @@ class QCStore:
         blob = cls._load_raw()
         path = Path(local_path)
         if path.is_dir():
-            stamp = datetime.utcnow().strftime("%Y-%m-%d_%H-%M-%S") if include_timestamp else "qc_backup"
+            stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S") if include_timestamp else "qc_backup"
             path = path / f"{stamp}_qc-backup.json"
         path.write_text(json.dumps(blob, indent=2))
         return path
