@@ -41,13 +41,15 @@ def get_zstack_reg(stack, plane_order, n_planes, n_repeats_per_plane, ref_channe
 
     print("Registering between planes...")
     new_time = time.time()
-    full_reg_stack, shifts_between = reg_between_planes(plane_reg_stack, **reg_ops)
-    print(f"Planes registered in {np.round(time.time() - new_time, 2)} s")
+    full_reg_stack, shifts_between, flagged = reg_between_planes(plane_reg_stack, return_flagged=True, **reg_ops)
+    print(f"Planes registered in {np.round(time.time() - new_time, 2)} s"
+          f" ({len(flagged)} planes kept their neighbour's shift: {flagged})")
 
     ouput_dict = {'plane_reg_stack': plane_reg_stack,
                   'full_reg_stack': full_reg_stack,
                   'shifts_within': shifts_within,
-                  'shifts_between': shifts_between}
+                  'shifts_between': shifts_between,
+                  'between_flagged_planes': flagged}
 
     return ouput_dict
 
@@ -117,33 +119,163 @@ def deinterleave_channels(stack: np.ndarray,
     return stack_ref, stack_target
 
 
-def _load_averaged_loop_volumes(zstack_path, n_planes, n_volumes, n_channels):
-    """Load a multi-volume loop ScanImage TIFF and return the volume-averaged stack.
+def _read_volume_block(tif, vol_idx, z0, z1, n_planes, n_channels):
+    """Pages for planes [z0, z1) of one loop volume, as an array (z1 - z0, n_channels, H, W).
 
     ScanImage loop-mode page order (2-ch example):
         vol0_slice0_ch0, vol0_slice0_ch1, vol0_slice1_ch0, ..., vol0_sliceN_ch1,
         vol1_slice0_ch0, ...
-
-    Returns:
-        n_channels == 1: float32 array (n_planes, H, W)
-        n_channels  > 1: float32 array (n_planes, n_channels, H, W)
-            so the downstream shape check `2 if len(stack.shape)==4 else 1` stays correct.
+    so the block is one contiguous run of pages.
     """
-    pages_per_vol = n_planes * n_channels
+    base = (vol_idx * n_planes + z0) * n_channels
+    data = tif.asarray(key=range(base, base + (z1 - z0) * n_channels))
+    return data.reshape(z1 - z0, n_channels, *data.shape[-2:])
+
+
+def _register_loop_block(args):
+    """Register and average planes [z0, z1) across all volumes (one worker's share).
+
+    The block's frames from every volume are held in memory (int16). For each plane, the
+    reference starts as the mean of all smoothed frames and is refined n_iter times on the
+    registered frames. Each frame is matched against the reference without its own
+    contribution (leave-one-out): one frame per volume is noisy enough that it would
+    otherwise lock onto its own noise at zero lag. Shifts are estimated on frames smoothed
+    with smooth_sigma and applied to the raw frames before averaging.
+    """
+    (zstack_path, z0, z1, n_planes, n_volumes, n_channels,
+     ref_channel, n_iter, smooth_sigma, upsample_factor) = args
+    reg_channels = list(range(n_channels)) if ref_channel is None else [ref_channel]
+    nz = z1 - z0
+
     with TiffFile(str(zstack_path)) as tif:
-        page0 = tif.pages[0].asarray()
-        H, W = page0.shape
-        accum = np.zeros((pages_per_vol, H, W), dtype=np.float32)
-        for vol_idx in range(n_volumes):
-            base = vol_idx * pages_per_vol
-            vol = tif.asarray(key=range(base, base + pages_per_vol))
-            accum += vol
-    accum /= n_volumes
-    if n_channels > 1:
-        # pages are interleaved: [slice0_ch0, slice0_ch1, slice1_ch0, ...]
-        # reshape to (n_planes, n_channels, H, W)
-        return accum.reshape(n_planes, n_channels, H, W).astype(np.float32)
-    return accum.astype(np.float32)
+        block = np.stack([_read_volume_block(tif, v, z0, z1, n_planes, n_channels)
+                          for v in range(n_volumes)])  # (V, nz, C, H, W)
+
+    H, W = block.shape[-2:]
+    means = np.zeros((nz, n_channels, H, W), dtype=np.float32)
+    shifts = np.zeros((n_volumes, nz, n_channels, 2), dtype=np.float32)
+    for zi in range(nz):
+        for c in reg_channels:
+            frames = block[:, zi, c].astype(np.float32)
+            if smooth_sigma:
+                frames = scipy.ndimage.gaussian_filter(frames, (0, smooth_sigma, smooth_sigma))
+            frames -= frames.mean(axis=(1, 2), keepdims=True)
+            aligned = frames.copy()
+            for _ in range(n_iter):
+                total = aligned.sum(axis=0)
+                for v in range(n_volumes):
+                    ref = (total - aligned[v]) / max(n_volumes - 1, 1)
+                    sh, _, _ = skimage.registration.phase_cross_correlation(
+                        ref, frames[v], upsample_factor=upsample_factor, normalization=None)
+                    shifts[v, zi, c] = sh
+                for v in range(n_volumes):
+                    aligned[v] = scipy.ndimage.shift(frames[v], shifts[v, zi, c])
+        for c in range(n_channels):
+            if ref_channel is not None:
+                shifts[:, zi, c] = shifts[:, zi, ref_channel]
+            acc = np.zeros((H, W), dtype=np.float64)
+            for v in range(n_volumes):
+                acc += scipy.ndimage.shift(block[v, zi, c].astype(np.float32), shifts[v, zi, c])
+            means[zi, c] = acc / n_volumes
+    return z0, means, shifts
+
+
+def _load_registered_loop_volumes(zstack_path, n_planes, n_volumes, n_channels,
+                                  ref_channel: Optional[int] = None,
+                                  n_iter: int = 2,
+                                  smooth_sigma: float = 1.0,
+                                  upsample_factor: int = 10,
+                                  block_memory_bytes: float = 1e9,
+                                  n_processes: Optional[int] = None):
+    """Motion-correct each plane across the volumes of a loop ScanImage TIFF, then average.
+
+    Loading the whole file can need >100 GiB (e.g. 100 volumes x 450 slices x 2 channels),
+    so planes are processed in blocks: a worker reads its block of planes from every volume
+    (one contiguous run of pages per volume), registers each plane's frames and keeps only
+    the registered mean.
+
+    Parameters
+    ----------
+    ref_channel : int, optional
+        Channel whose shifts are applied to every channel. None registers each channel on
+        its own (matches register_cortical_stack's two-channel behaviour).
+    n_iter : int
+        Reference refinements (reference = mean of the frames registered in the last pass).
+    smooth_sigma : float
+        Gaussian sigma (px) applied to frames before estimating shifts; 0 disables.
+    upsample_factor : int
+        Sub-pixel precision of the phase correlation (1 = whole pixels).
+    block_memory_bytes : float
+        Target size of one worker's block of raw frames.
+
+    Returns
+    -------
+    stack : np.ndarray
+        float32, (n_planes, H, W) for one channel or (n_planes, n_channels, H, W).
+    shifts : np.ndarray
+        float32 (n_volumes, n_planes, n_channels, 2): (y, x) shift applied to each frame.
+    """
+    with TiffFile(str(zstack_path)) as tif:
+        H, W = tif.pages[0].shape
+    plane_bytes = n_volumes * n_channels * H * W * 2  # one plane's raw int16 frames, all volumes
+    planes_per_block = int(max(1, min(n_planes, block_memory_bytes // plane_bytes)))
+    blocks = [(z0, min(z0 + planes_per_block, n_planes)) for z0 in range(0, n_planes, planes_per_block)]
+    # raw block + smoothed and aligned float32 frames of one plane/channel + output means
+    worker_bytes = planes_per_block * plane_bytes + 2 * n_volumes * H * W * 4 + planes_per_block * n_channels * H * W * 4
+    n_processes = n_processes or _default_n_processes(worker_bytes)
+    n_processes = max(1, min(n_processes, len(blocks)))
+    print(f"Registering {n_volumes} volumes per plane before averaging: {len(blocks)} blocks of "
+          f"<= {planes_per_block} planes, {n_processes} processes")
+
+    tasks = [(str(zstack_path), z0, z1, n_planes, n_volumes, n_channels,
+              ref_channel, n_iter, smooth_sigma, upsample_factor) for z0, z1 in blocks]
+    stack = np.zeros((n_planes, n_channels, H, W), dtype=np.float32)
+    shifts = np.zeros((n_volumes, n_planes, n_channels, 2), dtype=np.float32)
+    if n_processes == 1:
+        results = map(_register_loop_block, tasks)
+    else:
+        pool = Pool(n_processes)
+        results = pool.imap_unordered(_register_loop_block, tasks)
+    try:
+        for z0, block_mean, block_shifts in results:
+            z1 = z0 + block_mean.shape[0]
+            stack[z0:z1] = block_mean
+            shifts[:, z0:z1] = block_shifts
+    finally:
+        if n_processes > 1:
+            pool.close()
+            pool.join()
+    if n_channels == 1:
+        stack = stack[:, 0]
+    return stack, shifts
+
+
+def _default_n_processes(bytes_per_worker: float, cpu_buffer: int = 2) -> int:
+    """Worker count from the task's CPUs ($CO_CPUS, else the host count) and free memory."""
+    cpus = int(os.environ.get("CO_CPUS") or os.cpu_count() or 1)
+    by_memory = int(psutil.virtual_memory().available * 0.8 // max(bytes_per_worker, 1))
+    return max(1, min(cpus - cpu_buffer, by_memory))
+
+
+def summarize_volume_shifts(shifts: np.ndarray) -> list:
+    """Per-channel QC summary of within-plane (volume-to-volume) motion.
+
+    Displacement is each frame's distance (px) from its plane's median shift.
+    """
+    disp = np.linalg.norm(shifts - np.median(shifts, axis=0, keepdims=True), axis=-1)
+    summaries = []
+    for c in range(shifts.shape[2]):
+        d = disp[:, :, c]
+        summaries.append({
+            "n_volumes_registered": int(shifts.shape[0]),
+            "displacement_px_median_per_plane": np.round(np.median(d, axis=0), 3).tolist(),
+            "displacement_px_p95_per_plane": np.round(np.percentile(d, 95, axis=0), 3).tolist(),
+            "drift_px_per_plane": np.round(np.linalg.norm(shifts[-1, :, c] - shifts[0, :, c], axis=-1), 3).tolist(),
+            "displacement_px_median": float(np.median(d)),
+            "displacement_px_p95": float(np.percentile(d, 95)),
+            "displacement_px_max": float(d.max()),
+        })
+    return summaries
 
 
 def register_cortical_stack(zstack_path: Union[Path, str],
@@ -237,17 +369,20 @@ def register_cortical_stack(zstack_path: Union[Path, str],
     print(f"Metadata parsed in {np.round(time.time() - new_time, 2)} s")
 
     # 2. load stack
-    # For many-volume loop acquisitions, averaging across volumes before loading avoids OOM:
-    # e.g. 450 slices × 100 volumes × 2 channels = 90 000 pages ≈ 135 GiB raw.
-    # Pre-averaging yields n_channels * n_slices pages at ~1.3 GiB; n_repeats_per_plane → 1.
+    # Loading every page of a many-volume loop acquisition can OOM (450 slices x 100 volumes x
+    # 2 channels = 90 000 pages ~ 135 GiB). Instead, register each plane's frames across volumes
+    # and average them block by block; the result has one (registered) frame per plane.
     print(f"Loading stack from: {zstack_path}")
     new_time = time.time()
 
     n_channels = stack_metadata.get('num_channels', 1)
+    volume_shift_summaries = None
     if plane_order == 'loop' and n_repeats_per_plane > 1:
-        stack = _load_averaged_loop_volumes(zstack_path, n_planes, n_repeats_per_plane, n_channels)
+        stack, volume_shifts = _load_registered_loop_volumes(zstack_path, n_planes, n_repeats_per_plane,
+                                                             n_channels, ref_channel=ref_channel)
+        volume_shift_summaries = summarize_volume_shifts(volume_shifts)
+        stack_metadata['within_plane_registration'] = 'per-volume, before averaging'
         n_repeats_per_plane = 1
-        stack_metadata['num_volumes'] = 1
     else:
         stack = imread(Path(zstack_path))
 
@@ -304,6 +439,7 @@ def register_cortical_stack(zstack_path: Union[Path, str],
                                                         target_channel)
             reg_dict_target['channel'] = target_channel
             reg_dict_target['ref_channel'] = ref_channel
+            reg_dict_target['between_flagged_planes'] = reg_dict_ref['between_flagged_planes']
         else:
             reg_dict_target = get_zstack_reg(stack_target, plane_order, n_planes,
                                       n_repeats_per_plane, target_channel,
@@ -323,7 +459,10 @@ def register_cortical_stack(zstack_path: Union[Path, str],
     # channel specific info
     for i, d in enumerate(reg_dicts):
         ch = d['channel']
-        output_dict[f'channel_{ch}'] = {'shifts_between': _list_array_to_list(d['shifts_between'])}
+        output_dict[f'channel_{ch}'] = {'shifts_between': _list_array_to_list(d['shifts_between']),
+                                        'between_plane_flagged_planes': d.get('between_flagged_planes')}
+        if volume_shift_summaries is not None:
+            output_dict[f'channel_{ch}']['within_plane'] = volume_shift_summaries[ch]
 
     
 
@@ -1142,7 +1281,9 @@ def reg_between_planes(stack_imgs,
                        ref_ind: int = 30,
                        top_ring_buffer: int = 10,
                        window_size: int = 5,
-                       use_adapthisteq: bool = True):
+                       use_adapthisteq: bool = True,
+                       max_step_px: Optional[float] = 10.0,
+                       return_flagged: bool = False):
     """Register between planes. Each plane with single 2D image
     Use phase correlation.
     Use median filtered images to calculate shift between neighboring planes.
@@ -1160,11 +1301,21 @@ def reg_between_planes(stack_imgs,
         window size for rolling, by default 5
     use_adapthisteq : bool, optional
         whether to use adaptive histogram equalization, by default True
+    max_step_px : float, optional
+        Largest plausible shift change (px) between neighbouring planes. A larger step is
+        treated as a failed phase correlation (e.g. noise above the brain): the plane keeps
+        its neighbour's shift and is flagged. None disables the check. By default 10.
+    return_flagged : bool, optional
+        Also return the indices of flagged planes, by default False
 
     Returns
     -------
     np.ndarray (3D)
         Stack after plane-to-plane registration.
+    list
+        Shift (y, x) applied to each plane.
+    list of int
+        Flagged plane indices (only if return_flagged).
     """
     num_planes = stack_imgs.shape[0]
     reg_stack_imgs = np.zeros_like(stack_imgs)
@@ -1181,6 +1332,14 @@ def reg_between_planes(stack_imgs,
     temp_stack_imgs[ref_ind, :, :] = ref_stack_imgs[ref_ind, :, :]
     shift_all = []
     shift_all.append(np.array([0, 0]))
+    flagged = []
+
+    def guard(i, shift, neighbour_shift):
+        if max_step_px is not None and np.linalg.norm(shift - neighbour_shift) > max_step_px:
+            flagged.append(i)
+            return np.asarray(neighbour_shift, dtype=float)
+        return shift
+
     for i in range(ref_ind + 1, num_planes):
         # Calculation valid pixels
         temp_ref = np.mean(
@@ -1195,6 +1354,7 @@ def reg_between_planes(stack_imgs,
 
         shift, _, _ = skimage.registration.phase_cross_correlation(
             temp_ref, temp_mov, normalization=None, upsample_factor=10)
+        shift = guard(i, shift, shift_all[-1])
         temp_stack_imgs[i, :, :] = scipy.ndimage.shift(
             ref_stack_imgs[i, :, :], shift)
         reg_stack_imgs[i, :, :] = scipy.ndimage.shift(
@@ -1214,11 +1374,14 @@ def reg_between_planes(stack_imgs,
 
             shift, _, _ = skimage.registration.phase_cross_correlation(
                 temp_ref, temp_mov, normalization=None, upsample_factor=10)
+            shift = guard(i, shift, shift_all[0])
             temp_stack_imgs[i, :, :] = scipy.ndimage.shift(
                 ref_stack_imgs[i, :, :], shift)
             reg_stack_imgs[i, :, :] = scipy.ndimage.shift(
                 stack_imgs[i, :, :], shift)
             shift_all.insert(0, shift)
+    if return_flagged:
+        return reg_stack_imgs, shift_all, sorted(flagged)
     return reg_stack_imgs, shift_all
 
 
