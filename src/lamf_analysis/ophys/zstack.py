@@ -289,10 +289,17 @@ def _load_registered_loop_volumes(zstack_path, n_planes, n_volumes, n_channels,
         pool = Pool(n_processes)
         results = pool.imap_unordered(_register_loop_block, tasks)
     try:
-        for z0, block_mean, block_shifts in results:
+        t0 = time.time()
+        for n_done, (z0, block_mean, block_shifts) in enumerate(results, start=1):
             z1 = z0 + block_mean.shape[0]
             stack[z0:z1] = block_mean
             shifts[:, z0:z1] = block_shifts
+            if n_done % max(1, len(blocks) // 20) == 0 or n_done == len(blocks):
+                elapsed = time.time() - t0
+                load = f", load={os.getloadavg()[0]:.1f}" if hasattr(os, "getloadavg") else ""
+                print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} blocks {n_done}/{len(blocks)}, "
+                      f"{elapsed / 60:.1f} min, ~{elapsed / n_done * (len(blocks) - n_done) / 60:.0f} min left{load}",
+                      flush=True)
     finally:
         if n_processes > 1:
             pool.close()
