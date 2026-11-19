@@ -64,8 +64,7 @@ class LoopVolumeRegistrationTest(unittest.TestCase):
 
         for n_processes in (1, 2):
             stack, shifts = _load_registered_loop_volumes(
-                self.path, 5, 4, 2, ref_channel=None,
-                block_memory_bytes=1, n_processes=n_processes)  # forces one plane per block
+                self.path, 5, 4, 2, ref_channel=None, n_processes=n_processes)
             self.assertEqual(stack.shape, (5, 2, 48, 48))
             np.testing.assert_allclose(stack, np.round(truth), atol=1)
             np.testing.assert_array_equal(shifts, 0)
