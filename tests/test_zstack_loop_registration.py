@@ -112,6 +112,49 @@ class LoopVolumeRegistrationTest(unittest.TestCase):
         self.assertGreaterEqual(np.mean(np.all(np.abs(rel_found - rel_true) <= 1, axis=1)), 0.9)
         self.assertLess(np.mean(np.all(np.abs(shifts[:, 0, 0]) < 0.05, axis=1)), 0.1)
 
+    def test_large_shifts_are_rejected(self):
+        n_volumes, size = 12, 64
+        truth = _truth(self.rng, 1, 1, size)
+        motion = np.zeros((n_volumes, 1, 2), dtype=int)
+        motion[4, 0] = (30, -25)  # one volume far off: must not be accepted with max_shift_px=20
+        motion[7, 0] = (2, 1)
+        _write_loop_tiff(self.path, truth, n_volumes, motion, noise_sd=30, rng=self.rng)
+        _, shifts, _, rejected = _load_registered_loop_volumes(self.path, 1, n_volumes, 1, n_processes=1,
+                                                               return_naive=True, max_shift_px=20)
+        self.assertTrue(rejected[4, 0, 0])
+        self.assertLessEqual(np.linalg.norm(shifts[4, 0, 0]), 20)
+        self.assertFalse(rejected[7, 0, 0])
+        _, unguarded = _load_registered_loop_volumes(self.path, 1, n_volumes, 1, n_processes=1, max_shift_px=None)
+        self.assertGreater(np.linalg.norm(unguarded[4, 0, 0]), 20)
+
+    def test_binned_estimation_matches_full_resolution(self):
+        n_volumes = 10
+        truth = ndi.zoom(_truth(self.rng, 1, 1, 128), (1, 1, 4, 4), order=1)  # 512 px
+        motion = self.rng.integers(-4, 5, size=(n_volumes, 1, 2))
+        _write_loop_tiff(self.path, truth, n_volumes, motion, noise_sd=100, rng=self.rng)
+        _, binned = _load_registered_loop_volumes(self.path, 1, n_volumes, 1, n_processes=1)  # auto bin 2
+        _, full = _load_registered_loop_volumes(self.path, 1, n_volumes, 1, n_processes=1, estimate_bin=1)
+        self.assertLessEqual(np.abs(binned - full).max(), 0.5)
+
+    def test_register_cortical_stack_records_within_plane_qc(self):
+        from unittest import mock
+        from lamf_analysis.ophys import zstack
+
+        n_planes, n_volumes, size = 6, 8, 64
+        truth = _truth(self.rng, n_planes, 2, size)
+        motion = self.rng.integers(-3, 4, size=(n_volumes, n_planes, 2))
+        _write_loop_tiff(self.path, truth, n_volumes, motion, noise_sd=60, rng=self.rng)
+        meta = {"num_slices": n_planes, "num_volumes": n_volumes, "frames_per_slice": 1,
+                "z_steps": list(range(n_planes)), "actuator": "fastZ", "num_channels": 2,
+                "channels_saved": [1, 3], "z_step_size": 1.0}
+        with mock.patch.object(zstack, "metadata_from_scanimage_tif", return_value=(meta, {}, {})):
+            out = zstack.register_cortical_stack(self.path, save=False, output_dir=Path(self.tmp.name) / "out",
+                                                 zstack_folder="z", reference_plane=2, ref_channel=0)
+        self.assertEqual(out["num_volumes"], n_volumes)
+        within = out["channel_0"]["within_plane"]
+        self.assertTrue(np.isfinite(within["sharpness_gain_median"]))
+        self.assertEqual(within["frames_rejected"], 0)
+
     def test_summarize_volume_shifts(self):
         shifts = np.zeros((10, 3, 2, 2), dtype=np.float32)
         shifts[3, 1, 0] = [3, 4]  # one 5 px excursion on plane 1, channel 0
