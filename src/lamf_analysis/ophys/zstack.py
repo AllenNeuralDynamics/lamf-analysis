@@ -132,6 +132,51 @@ def _read_volume_block(tif, vol_idx, z0, z1, n_planes, n_channels):
     return data.reshape(z1 - z0, n_channels, *data.shape[-2:])
 
 
+def _uniform_page_layout(zstack_path, n_pages: int):
+    """Byte layout of evenly spaced, uncompressed pages, or None.
+
+    Opening a ScanImage TIFF with tifffile and indexing a late page walks every IFD before it
+    (tens of thousands of small reads; very slow on network-mounted data). ScanImage pages are
+    uncompressed and evenly spaced, so page k's data starts at data0 + k * stride. The layout is
+    checked by parsing the IFD at the predicted position of the last page.
+
+    Returns (data0, stride, (H, W), dtype string) or None if any check fails.
+    """
+    from tifffile import TiffPage
+    try:
+        with TiffFile(str(zstack_path)) as tif:
+            p0, p1, p2 = tif.pages[0], tif.pages[1], tif.pages[2]
+            if any(p.compression != 1 or len(p.dataoffsets) != 1 or p.shape != p0.shape for p in (p0, p1, p2)):
+                return None
+            stride = p1.dataoffsets[0] - p0.dataoffsets[0]
+            ifd_stride = p2.offset - p1.offset
+            if stride <= 0 or p2.dataoffsets[0] - p1.dataoffsets[0] != stride:
+                return None
+            last = n_pages - 1
+            data0 = p0.dataoffsets[0]
+            if last > 2:
+                tif.filehandle.seek(p1.offset + (last - 1) * ifd_stride)
+                page = TiffPage(tif, index=last)
+                if page.dataoffsets[0] != data0 + last * stride or page.shape != p0.shape:
+                    return None
+            dtype = np.dtype(p0.dtype).newbyteorder(tif.byteorder).str
+            return data0, stride, tuple(p0.shape), dtype
+    except Exception:  # noqa: BLE001 - any surprise means: use tifffile's own page lookup
+        return None
+
+
+def _read_volume_block_raw(fh, layout, vol_idx, z0, z1, n_planes, n_channels):
+    """Same as _read_volume_block, reading page data directly at computed offsets (one read)."""
+    data0, stride, (H, W), dtype = layout
+    first = (vol_idx * n_planes + z0) * n_channels
+    count = (z1 - z0) * n_channels
+    n_px = H * W
+    fh.seek(data0 + first * stride)
+    buf = fh.read((count - 1) * stride + n_px * np.dtype(dtype).itemsize)
+    pages = np.stack([np.frombuffer(buf, dtype=dtype, count=n_px, offset=i * stride) for i in range(count)])
+    return pages.reshape(z1 - z0, n_channels, H, W)
+
+
 def _register_loop_block(args):
     """Register and average planes [z0, z1) across all volumes (one worker's share).
 
@@ -143,13 +188,18 @@ def _register_loop_block(args):
     with smooth_sigma and applied to the raw frames before averaging.
     """
     (zstack_path, z0, z1, n_planes, n_volumes, n_channels,
-     ref_channel, n_iter, smooth_sigma, upsample_factor) = args
+     ref_channel, n_iter, smooth_sigma, upsample_factor, layout) = args
     reg_channels = list(range(n_channels)) if ref_channel is None else [ref_channel]
     nz = z1 - z0
 
-    with TiffFile(str(zstack_path)) as tif:
-        block = np.stack([_read_volume_block(tif, v, z0, z1, n_planes, n_channels)
-                          for v in range(n_volumes)])  # (V, nz, C, H, W)
+    if layout is not None:
+        with open(zstack_path, "rb") as fh:
+            block = np.stack([_read_volume_block_raw(fh, layout, v, z0, z1, n_planes, n_channels)
+                              for v in range(n_volumes)])  # (V, nz, C, H, W)
+    else:
+        with TiffFile(str(zstack_path)) as tif:
+            block = np.stack([_read_volume_block(tif, v, z0, z1, n_planes, n_channels)
+                              for v in range(n_volumes)])
 
     H, W = block.shape[-2:]
     means = np.zeros((nz, n_channels, H, W), dtype=np.float32)
@@ -217,6 +267,8 @@ def _load_registered_loop_volumes(zstack_path, n_planes, n_volumes, n_channels,
     """
     with TiffFile(str(zstack_path)) as tif:
         H, W = tif.pages[0].shape
+    layout = _uniform_page_layout(zstack_path, n_planes * n_volumes * n_channels)
+    print(f"Page access: {'direct offsets (uniform pages)' if layout else 'tifffile page lookup'}")
     plane_bytes = n_volumes * n_channels * H * W * 2  # one plane's raw int16 frames, all volumes
     planes_per_block = int(max(1, min(n_planes, block_memory_bytes // plane_bytes)))
     blocks = [(z0, min(z0 + planes_per_block, n_planes)) for z0 in range(0, n_planes, planes_per_block)]
@@ -228,7 +280,7 @@ def _load_registered_loop_volumes(zstack_path, n_planes, n_volumes, n_channels,
           f"<= {planes_per_block} planes, {n_processes} processes")
 
     tasks = [(str(zstack_path), z0, z1, n_planes, n_volumes, n_channels,
-              ref_channel, n_iter, smooth_sigma, upsample_factor) for z0, z1 in blocks]
+              ref_channel, n_iter, smooth_sigma, upsample_factor, layout) for z0, z1 in blocks]
     stack = np.zeros((n_planes, n_channels, H, W), dtype=np.float32)
     shifts = np.zeros((n_volumes, n_planes, n_channels, 2), dtype=np.float32)
     if n_processes == 1:

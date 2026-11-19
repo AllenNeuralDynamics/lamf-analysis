@@ -123,6 +123,47 @@ class LoopVolumeRegistrationTest(unittest.TestCase):
         self.assertEqual(summary[1]["displacement_px_max"], 0.0)
 
 
+class PageLayoutTest(unittest.TestCase):
+    def test_direct_offsets_match_tifffile_and_loader_results_agree(self):
+        from lamf_analysis.ophys import zstack
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "stack.tif"
+            rng = np.random.default_rng(3)
+            truth = _truth(rng, 4, 2, 40)
+            motion = rng.integers(-2, 3, size=(6, 4, 2))
+            _write_loop_tiff(path, truth, 6, motion, noise_sd=40, rng=rng)
+
+            layout = zstack._uniform_page_layout(path, 4 * 6 * 2)
+            self.assertIsNotNone(layout)
+            with tifffile.TiffFile(path) as tif, open(path, "rb") as fh:
+                for v in (0, 5):
+                    np.testing.assert_array_equal(
+                        zstack._read_volume_block_raw(fh, layout, v, 1, 4, 4, 2),
+                        zstack._read_volume_block(tif, v, 1, 4, 4, 2))
+
+            fast = _load_registered_loop_volumes(path, 4, 6, 2, ref_channel=0, n_processes=1)
+            original = zstack._uniform_page_layout
+            zstack._uniform_page_layout = lambda *a, **k: None
+            try:
+                slow = _load_registered_loop_volumes(path, 4, 6, 2, ref_channel=0, n_processes=1)
+            finally:
+                zstack._uniform_page_layout = original
+            np.testing.assert_array_equal(fast[0], slow[0])
+            np.testing.assert_array_equal(fast[1], slow[1])
+
+    def test_compressed_or_short_files_fall_back(self):
+        from lamf_analysis.ophys import zstack
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "c.tif"
+            tifffile.imwrite(path, np.zeros((6, 16, 16), np.int16), compression="zlib")
+            self.assertIsNone(zstack._uniform_page_layout(path, 6))
+            plain = Path(tmp) / "p.tif"
+            tifffile.imwrite(plain, np.zeros((6, 16, 16), np.int16))
+            self.assertIsNone(zstack._uniform_page_layout(plain, 60))  # metadata claims more pages
+
+
 class BetweenPlaneGuardTest(unittest.TestCase):
     def test_failed_plane_keeps_neighbour_shift_and_is_flagged(self):
         rng = np.random.default_rng(1)
